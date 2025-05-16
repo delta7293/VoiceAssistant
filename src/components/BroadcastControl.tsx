@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -34,106 +33,195 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callStatuses, setCallStatuses] = useState<CallStatus[]>([]);
   const [completedCalls, setCompletedCalls] = useState(0);
   const [failedCalls, setFailedCalls] = useState(0);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   
   const { toast } = useToast();
 
-  const startBroadcast = () => {
-    if (!selectedTemplate) {
-      toast({
-        title: "No template selected",
-        description: "Please select a message template before broadcasting",
-        variant: "destructive"
+  // Add polling function
+  const pollCallStatus = async () => {
+    console.log('Polling call status');
+    try {
+      const response = await fetch('https://9270-74-80-187-81.ngrok-free.app/api/call-status', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
-      return;
-    }
-    
-    if (clientData.length === 0) {
-      toast({
-        title: "No clients available",
-        description: "Please upload client data before broadcasting",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    setIsBroadcasting(true);
-    setCurrentProgress(0);
-    setCompletedCalls(0);
-    setFailedCalls(0);
-    
-    // Initialize all calls as pending
-    const initialStatuses = clientData.map(client => ({
-      id: client.id,
-      clientName: client.name,
-      phone: client.phone,
-      status: "pending" as const
-    }));
-    
-    setCallStatuses(initialStatuses);
-    
-    // Simulate broadcasting process
-    let processedCalls = 0;
-    let completedCount = 0;
-    let failedCount = 0;
-    
-    const interval = setInterval(() => {
-      if (processedCalls >= clientData.length) {
-        clearInterval(interval);
-        setIsBroadcasting(false);
-        
-        toast({
-          title: "Broadcast completed",
-          description: `Successfully sent to ${completedCount} clients, ${failedCount} failed`,
-          variant: completedCount === clientData.length ? "default" : "destructive"
-        });
-        
-        return;
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch call status');
       }
+
+      const contentType = response.headers.get('content-type');
+      let data;
       
-      setCallStatuses(prev => {
-        const updated = [...prev];
-        // Update current call to in-progress
-        if (updated[processedCalls].status === "pending") {
-          updated[processedCalls] = {
-            ...updated[processedCalls],
-            status: "in-progress"
-          };
-          return updated;
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+          console.log('API Response:', data);
+        } catch (error) {
+          const textResponse = await response.text();
+          data = { message: textResponse };
         }
+      } else {
+        const textResponse = await response.text();
+        data = { message: textResponse };
+      }
+
+      // Update call statuses based on the response
+      if (data.statuses) {
+        setCallStatuses(data.statuses);
         
-        // Finish current call (randomly success or fail)
-        const isSuccess = Math.random() > 0.2; // 80% success rate
-        
-        if (isSuccess) {
-          updated[processedCalls] = {
-            ...updated[processedCalls],
-            status: "completed"
-          };
-          completedCount++;
-          setCompletedCalls(completedCount);
-        } else {
-          updated[processedCalls] = {
-            ...updated[processedCalls],
-            status: "failed",
-            message: "No answer or line busy"
-          };
-          failedCount++;
-          setFailedCalls(failedCount);
-        }
-        
-        processedCalls++;
+        // Update counters
+        const completed = data.statuses.filter((status: CallStatus) => status.status === "completed").length;
+        const failed = data.statuses.filter((status: CallStatus) => status.status === "failed").length;
+        setCompletedCalls(completed);
+        setFailedCalls(failed);
         
         // Update progress
-        const progressPercentage = (processedCalls / clientData.length) * 100;
-        setCurrentProgress(progressPercentage);
-        
-        return updated;
+        const total = clientData.length;
+        const progress = ((completed + failed) / total) * 100;
+        setCurrentProgress(progress);
+
+        // If all calls are completed or failed, stop polling
+        if (completed + failed === total) {
+          stopPolling();
+          setIsBroadcasting(false);
+          toast({
+            title: "Broadcast Complete",
+            description: `Completed: ${completed}, Failed: ${failed}`,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error polling call status:', error);
+    }
+    console.log('Polling call status completed');
+  };
+
+  const startPolling = () => {
+    // Poll every 5 seconds
+    const interval = setInterval(pollCallStatus, 1000);
+    console.log('Polling started');
+    setPollingInterval(interval);
+  };
+
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  };
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, []);
+
+  // Helper function to personalize template
+  function personalizeTemplate(template: string, client: any) {
+    return template
+      .replace(/\{name\}/g, client.name)
+      .replace(/\{fileNumber\}/g, client.fileNumber);
+  }
+
+  const startBroadcast = async () => {
+    if (!selectedTemplate || clientData.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select template and client data",
+        variant: "destructive"
       });
-    }, 800);
+      return;
+    }
+
+    try {
+      // Prepare personalized messages for each client
+      const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
+
+      const response = await fetch('https://9270-74-80-187-81.ngrok-free.app/api/make-call', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phonenumber: clientData.map(client => client.phone).join(','),
+          contact_id: clientData.map(client => client.id).join(','),
+          contact_name: clientData.map(client => client.name).join(','),
+          email: clientData.map(client => client.email).join(','),
+          contact_company: clientData.map(client => client.company).join(','),
+          contact_position: clientData.map(client => client.position).join(','),
+          empresa: "Your Company",
+          voiceId: "21m00Tcm4TlvDq8ikWAM",
+          stability: 90,
+          similarity_boost: 20,
+          style_exaggeration: 10,
+          // Send personalized messages as an array
+          content: personalizedMessages,
+          todo: "Your todo",
+          notodo: "Your notodo",
+          campaign_id: "your-campaign-id",
+          ai_profile_name: "your-ai-profile"
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error:', errorText);
+        throw new Error(`Failed to start calls: ${response.status} ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        try {
+          data = await response.json();
+          console.log('API Response:', data);
+        } catch (error) {
+          console.error('Failed to parse JSON response:', error);
+          const textResponse = await response.text();
+          console.log('Raw response:', textResponse);
+          data = { message: textResponse };
+          console.log('API Response:', data);
+        }
+      } else {
+        const textResponse = await response.text();
+        console.log('Raw response:', textResponse);
+        data = { message: textResponse };
+        console.log('API Response:', data);
+      }
+      
+      setIsBroadcasting(true);
+      
+      // Initialize call statuses
+      const initialStatuses = clientData.map(client => ({
+        id: client.id,
+        clientName: client.name,
+        phone: client.phone,
+        status: "pending" as const
+      }));
+      
+      setCallStatuses(initialStatuses);
+      
+      // Start polling for status updates
+      startPolling();
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to start calls",
+        variant: "destructive"
+      });
+    }
+  
   };
 
   const pauseBroadcast = () => {
     setIsBroadcasting(false);
+    stopPolling();
     toast({
       title: "Broadcast paused",
       description: "You can resume broadcasting at any time"

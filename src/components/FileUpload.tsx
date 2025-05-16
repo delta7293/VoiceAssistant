@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -6,8 +5,15 @@ import { Progress } from "@/components/ui/progress";
 import { FileUp, File, X, Check } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
+interface ClientData {
+  id: number;
+  name: string;
+  phone: string;
+  fileNumber: string;
+}
+
 interface FileUploadProps {
-  onFileUploaded: (data: any[]) => void;
+  onFileUploaded: (data: ClientData[]) => void;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
@@ -28,7 +34,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
     setIsDragging(false);
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     // Check file type
     const validTypes = [
       "application/vnd.ms-excel",
@@ -46,7 +52,70 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
     }
 
     setFile(file);
-    simulateUpload(file);
+    await handleFileUpload(file);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setIsUploading(true);
+    setProgress(0);
+    
+    try {
+      // Read the file
+      const text = await file.text();
+      const rows = text.split('\n');
+      const headers = rows[0].split(',').map(header => header.trim());
+      
+      // Validate headers
+      const requiredHeaders = ['name', 'phone', 'fileNumber'];
+      const hasRequiredHeaders = requiredHeaders.every(header => 
+        headers.some(h => h.toLowerCase() === header.toLowerCase())
+      );
+
+      if (!hasRequiredHeaders) {
+        throw new Error('File must contain name, phone, and fileNumber columns');
+      }
+
+      // Process data
+      const data: ClientData[] = rows.slice(1)
+        .filter(row => row.trim()) // Skip empty rows
+        .map((row, index) => {
+          const values = row.split(',').map(value => value.trim());
+          return {
+            id: index + 1,
+            name: values[0] || '',
+            phone: values[1] || '',
+            fileNumber: values[2] || ''
+          };
+        });
+
+      // Validate data
+      const validData = data.filter(item => 
+        item.name && item.phone && item.fileNumber
+      );
+
+      if (validData.length === 0) {
+        throw new Error('No valid data found in the file');
+      }
+
+      // Simulate progress
+      for (let i = 0; i <= 100; i += 10) {
+        setProgress(i);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      setIsUploading(false);
+      setIsUploaded(true);
+      onFileUploaded(validData);
+      
+    } catch (error) {
+      toast({
+        title: "Error processing file",
+        description: error instanceof Error ? error.message : "Failed to process file",
+        variant: "destructive"
+      });
+      setIsUploading(false);
+      setFile(null);
+    }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -62,35 +131,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
     if (e.target.files && e.target.files[0]) {
       processFile(e.target.files[0]);
     }
-  };
-
-  const simulateUpload = (file: File) => {
-    setIsUploading(true);
-    setProgress(0);
-    
-    // Simulate file processing and uploading
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsUploading(false);
-          setIsUploaded(true);
-          
-          // Simulate data from the file
-          const mockData = Array(10).fill(0).map((_, i) => ({
-            id: i + 1,
-            name: `Client ${i + 1}`,
-            phone: `+1 555-${100 + i}-${1000 + i}`,
-            fileNumber: `F${2000 + i}`
-          }));
-          
-          onFileUploaded(mockData);
-          
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 300);
   };
 
   const removeFile = () => {
