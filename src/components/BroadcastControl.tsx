@@ -141,7 +141,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       // Prepare personalized messages for each client
       const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
 
-      const response = await fetch('https://536a-74-80-187-81.ngrok-free.app/api/make-call', {
+      const response = await fetch('https://`536a-74-80-187-81.ngrok-free.app/api/make-call', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
