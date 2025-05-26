@@ -35,6 +35,7 @@ interface CallStatus {
   lastUpdate?: {
     timestamp: string;
   };
+  callSid?: string;
 }
 
 const BroadcastControl: React.FC<BroadcastProps> = ({ 
@@ -49,7 +50,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callSids, setCallSids] = useState<string[]>([]);
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
-  const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net/');
+  const [serverUrl, setServerUrl] = useState('https://536a-74-80-187-81.ngrok-free.app');
   const MAX_RETRIES = 3;
   
   const { toast } = useToast();
@@ -66,7 +67,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   // Function to check server connection
   async function getCallStatus(callSid) {
     try {
-        const response = await fetch(`https://3mia54rzc80dk4-3000.proxy.runpod.net/api/call-status/${callSid}`, {
+        const response = await fetch(`${serverUrl}/api/call-status/${callSid}`, {
             method: 'GET',
             headers: {
                 'Accept': 'application/json'
@@ -110,7 +111,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         // Update callStatuses
         setCallStatuses(prevStatuses =>
             prevStatuses.map(call =>
-                call.id === data.data.id
+                call.phone === data.data.phone
                     ? { ...call, ...data.data }
                     : call
             )
@@ -224,7 +225,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       // Prepare personalized messages for each client
       const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
 
-      const response = await fetch('https://3mia54rzc80dk4-3000.proxy.runpod.net/api/make-call', {
+      const response = await fetch(`${serverUrl}/api/make-call`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -289,10 +290,11 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       setIsBroadcasting(true);
       
       // Initialize call statuses
-      const initialStatuses = clientData.map(client => ({
+      const initialStatuses = clientData.map((client, idx) => ({
         id: client.id,
         clientName: client.name,
         phone: client.phone,
+        callSid: callSids[idx],
         status: "pending" as const
       }));
       
