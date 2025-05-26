@@ -208,7 +208,8 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   function personalizeTemplate(template: string, client: any) {
     return template
       .replace(/\{name\}/g, client.name)
-      .replace(/\{fileNumber\}/g, client.fileNumber);
+      .replace(/\{fileNumber\}/g, client.fileNumber)
+      .replace(/\{phoneNumber\}/g, client.phoneNumber);
   }
 
   const startBroadcast = async () => {
