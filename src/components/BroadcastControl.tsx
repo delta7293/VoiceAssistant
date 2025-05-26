@@ -50,14 +50,14 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callSids, setCallSids] = useState<string[]>([]);
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
-  const [serverUrl, setServerUrl] = useState('https://536a-74-80-187-81.ngrok-free.app');
+  const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
   const MAX_RETRIES = 3;
   
   const { toast } = useToast();
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // callSids가 바뀔 때마다 ref도 갱신
+
   useEffect(() => {
     callSidsRef.current = callSids;
   }, [callSids]);
