@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -19,23 +20,9 @@ interface BroadcastProps {
 interface CallStatus {
   id: number;
   clientName: string;
-  phone: string;
+  phoneNumber: string;
   status: "pending" | "in-progress" | "completed" | "failed";
   message?: string;
-  template?: string;
-  timestamp?: string;
-  direction?: string;
-  metadata?: {
-    contactId: string;
-    campaignId: string;
-    aiProfile: string;
-  };
-  duration?: number;
-  parentCallSid?: string | null;
-  lastUpdate?: {
-    timestamp: string;
-  };
-  callSid?: string;
 }
 
 const BroadcastControl: React.FC<BroadcastProps> = ({ 
@@ -47,275 +34,106 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callStatuses, setCallStatuses] = useState<CallStatus[]>([]);
   const [completedCalls, setCompletedCalls] = useState(0);
   const [failedCalls, setFailedCalls] = useState(0);
-  const [callSids, setCallSids] = useState<string[]>([]);
-  const callSidsRef = useRef(callSids);
-  const [retryCount, setRetryCount] = useState(0);
-  const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
-  const MAX_RETRIES = 3;
   
   const { toast } = useToast();
 
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-
-  useEffect(() => {
-    callSidsRef.current = callSids;
-  }, [callSids]);
-
-  // Function to check if response is an ngrok error page
-
-  // Function to check server connection
-  async function getCallStatus(callSid) {
-    try {
-        const response = await fetch(`${serverUrl}/api/call-status/${callSid}`, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Call Status:', JSON.stringify(data, null, 2));
-        return data;
-    } catch (error) {
-        console.error('Error fetching call status:', error);
-        throw error;
-    }
-}
-  // Add polling function
-  const pollCallStatus = async () => {
-
-    const currentCallSids = callSidsRef.current;
-    console.log('Polling call status for SIDs:', currentCallSids);
-    console.log('Current Call SIDs length:', currentCallSids.length);
-    if (!currentCallSids.length) { 
-      console.log('No more calls to poll');
-      pauseBroadcast();
-    }
-    try {
-      
-      const stillActiveCallSids: string[] = [];
-      let completedCalls = 0;
-      let failedCalls = 0;
-
-      const statusPromises = currentCallSids.map(async (callSid) => {
-        try {  
-        // // Example usage
-        // const callSid = 'CAc0aa4d05d8c89ba81a50f7418f4f77fd';
-        const data = await getCallStatus(callSid);
-
-        // Update callStatuses
-        setCallStatuses(prevStatuses =>
-            prevStatuses.map(call =>
-                call.phone === data.data.phone
-                    ? { ...call, ...data.data }
-                    : call
-            )
-        );
-
-        // Update completed/failed counts
-        if (data.data.status === "completed") {
-
-          setCallSids(prev => prev.filter(sid => sid !== callSid));
-          console.log('Call SID removed:', callSid);
-        } else if (data.data.status === "failed") {
-
-          setCallSids(prev => prev.filter(sid => sid !== callSid));
-          console.log('Call SID removed:', callSid);
-        } 
-        
-        setCompletedCalls(prev => data.data.status === "completed" ? prev + 1 : prev);
-        setFailedCalls(prev => data.data.status === "failed" ? prev + 1 : prev);
-        // Only keep polling if not completed/failed
-        if (data.data.status !== "completed" && data.data.status !== "failed") {
-            stillActiveCallSids.push(callSid);
-        }
-
-        // Update progress
-        setCurrentProgress(
-            ((completedCalls + failedCalls + 1) / clientData.length) * 100
-        );
-
-        if (data.data.status === "completed") {
-          toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
-        }
-
-        console.log(`Response status for ${callSid}:`, callStatuses);
-
-        } catch (error) {
-          console.error(`Error processing callSid ${callSid}:`, error);
-          
-          // If it's an ngrok error and we haven't exceeded retries
-          if (error.message.includes('Ngrok connection error') && retryCount < MAX_RETRIES) {
-            setRetryCount(prev => prev + 1);
-            toast({
-              title: "Connection Error",
-              description: `Retrying connection (${retryCount + 1}/${MAX_RETRIES})...`,
-              variant: "destructive"
-            });
-          }         
-
-        }
-      });
-
-      await Promise.all(statusPromises);
-
-
-    } catch (error) {
-      console.error('Error in pollCallStatus:', error);
+  const startBroadcast = () => {
+    if (!selectedTemplate) {
       toast({
-        title: "Error",
-        description: "Failed to poll call statuses",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const startPolling = () => {
-    setRetryCount(0);
-     if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-    }
-    const interval = setInterval(pollCallStatus, 5000);
-    pollingIntervalRef.current = interval;
-    console.log('Polling started');
-  };
-
-  const stopPolling = () => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-      console.log('Polling stopped');
-    }
-  };
-
-  // Cleanup polling on component unmount
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log('Call SIDs updated:', callSids);
-  }, [callSids]);
-
-  // Helper function to personalize template
-  function personalizeTemplate(template: string, client: any) {
-    return template
-      .replace(/\{name\}/g, client.name)
-      .replace(/\{fileNumber\}/g, client.fileNumber)
-      .replace(/\{phoneNumber\}/g, client.phoneNumber);
-  }
-
-  const startBroadcast = async () => {
-    if (!selectedTemplate || clientData.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please select template and client data",
+        title: "No template selected",
+        description: "Please select a message template before broadcasting",
         variant: "destructive"
       });
       return;
     }
-
-    try {
-      // Prepare personalized messages for each client
-      const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
-
-      const response = await fetch(`${serverUrl}/api/make-call`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phonenumber: clientData.map(client => client.phone).join(','),
-          contact_id: clientData.map(client => client.id).join(','),
-          contact_name: clientData.map(client => client.name).join(','),
-          email: clientData.map(client => client.email).join(','),
-          contact_company: clientData.map(client => client.company).join(','),
-          contact_position: clientData.map(client => client.position).join(','),
-          empresa: "Your Company",
-          voiceId: "21m00Tcm4TlvDq8ikWAM",
-          stability: 90,
-          similarity_boost: 20,
-          style_exaggeration: 10,
-          // Send personalized messages as an array
-          content: personalizedMessages,
-          todo: "Your todo",
-          notodo: "Your notodo",
-          campaign_id: "your-campaign-id",
-          ai_profile_name: "your-ai-profile"
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', errorText);
-        throw new Error(`Failed to start calls: ${response.status} ${response.statusText}`);
-      }
-
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-          
-          console.log('API Response_data:', data);
-          if (data.success && data.data && data.data.callSids) {
-            console.log('Call SIDs:', data.data.callSids);
-            setCallSids(data.data.callSids);
-            console.log('Call SIDs set:', callSids);
-            // Start polling for status updates
-            startPolling();
-
-          }
-        } catch (error) {
-          console.error('Failed to parse JSON response:', error);
-          const textResponse = await response.text();
-          console.log('Raw response:', textResponse);
-          data = { message: textResponse };
-          console.log('API Response:', data);
-        }
-      } else {
-        const textResponse = await response.text();
-        console.log('Raw response:', textResponse);
-        data = { message: textResponse };
-        console.log('API Response:', data);
-      }
-      
-      setIsBroadcasting(true);
-      
-      // Initialize call statuses
-      const initialStatuses = clientData.map((client, idx) => ({
-        id: client.id,
-        clientName: client.name,
-        phone: client.phone,
-        callSid: callSids[idx],
-        status: "pending" as const
-      }));
-      
-      setCallStatuses(initialStatuses);
-      
-
-    } catch (error) {
-      console.error(error);
+    
+    if (clientData.length === 0) {
       toast({
-        title: "Error",
-        description: "Failed to start calls",
+        title: "No clients available",
+        description: "Please upload client data before broadcasting",
         variant: "destructive"
       });
+      return;
     }
-  
+    
+    setIsBroadcasting(true);
+    setCurrentProgress(0);
+    setCompletedCalls(0);
+    setFailedCalls(0);
+    
+    // Initialize all calls as pending
+    const initialStatuses = clientData.map(client => ({
+      id: client.id,
+      clientName: client.name,
+      phoneNumber: client.phone,
+      status: "pending" as const
+    }));
+    
+    setCallStatuses(initialStatuses);
+    
+    // Simulate broadcasting process
+    let processedCalls = 0;
+    let completedCount = 0;
+    let failedCount = 0;
+    
+    const interval = setInterval(() => {
+      if (processedCalls >= clientData.length) {
+        clearInterval(interval);
+        setIsBroadcasting(false);
+        
+        toast({
+          title: "Broadcast completed",
+          description: `Successfully sent to ${completedCount} clients, ${failedCount} failed`,
+          variant: completedCount === clientData.length ? "default" : "destructive"
+        });
+        
+        return;
+      }
+      
+      setCallStatuses(prev => {
+        const updated = [...prev];
+        // Update current call to in-progress
+        if (updated[processedCalls].status === "pending") {
+          updated[processedCalls] = {
+            ...updated[processedCalls],
+            status: "in-progress"
+          };
+          return updated;
+        }
+        
+        // Finish current call (randomly success or fail)
+        const isSuccess = Math.random() > 0.2; // 80% success rate
+        
+        if (isSuccess) {
+          updated[processedCalls] = {
+            ...updated[processedCalls],
+            status: "completed"
+          };
+          completedCount++;
+          setCompletedCalls(completedCount);
+        } else {
+          updated[processedCalls] = {
+            ...updated[processedCalls],
+            status: "failed",
+            message: "No answer or line busy"
+          };
+          failedCount++;
+          setFailedCalls(failedCount);
+        }
+        
+        processedCalls++;
+        
+        // Update progress
+        const progressPercentage = (processedCalls / clientData.length) * 100;
+        setCurrentProgress(progressPercentage);
+        
+        return updated;
+      });
+    }, 800);
   };
 
   const pauseBroadcast = () => {
     setIsBroadcasting(false);
-    stopPolling();
     toast({
       title: "Broadcast paused",
       description: "You can resume broadcasting at any time"
@@ -359,19 +177,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
           <h2 className="text-2xl font-bold mb-6 gradient-text">
             Voice Broadcast Control
           </h2>
-          
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Server URL
-            </label>
-            <input
-              type="text"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              className="w-full p-2 border rounded-md"
-              placeholder="Enter server URL"
-            />
-          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-gray-50 rounded-lg p-4 border">
@@ -476,7 +281,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       <Card className="dashboard-card">
         <Tabs defaultValue="all">
           <div className="p-6">
-            <h2 className="text-xl font-bold mb-6">Call Status</h2>
+            <h2 className="text-xl font-bold mb-6">Call Statuss</h2>
             
             <TabsList className="mb-4">
               <TabsTrigger value="all">All Calls</TabsTrigger>
@@ -493,9 +298,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                       {getStatusIcon(call.status)}
                       <div className="ml-3 flex-1">
                         <div className="font-medium">{call.clientName}</div>
-                        <div className="text-sm text-gray-500">{call.phone}</div>
+                        <div className="text-sm text-gray-500">{call.phoneNumber}</div>
                       </div>
-                      {getStatusBadge(call.status)}
+                      {/* {getStatusBadge(call.status)} */}
                     </div>
                   ))
                 ) : (
@@ -516,7 +321,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                         <CheckCircle2 className="h-4 w-4 text-broadcast-green" />
                         <div className="ml-3 flex-1">
                           <div className="font-medium">{call.clientName}</div>
-                          <div className="text-sm text-gray-500">{call.phone}</div>
+                          <div className="text-sm text-gray-500">{call.phoneNumber}</div>
                         </div>
                         <Badge className="bg-broadcast-green">Completed</Badge>
                       </div>
@@ -539,7 +344,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                         <AlertTriangle className="h-4 w-4 text-broadcast-red" />
                         <div className="ml-3 flex-1">
                           <div className="font-medium">{call.clientName}</div>
-                          <div className="text-sm text-gray-500">{call.phone}</div>
+                          <div className="text-sm text-gray-500">{call.phoneNumber}</div>
                           {call.message && (
                             <div className="text-xs text-broadcast-red">{call.message}</div>
                           )}
@@ -568,7 +373,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                         }
                         <div className="ml-3 flex-1">
                           <div className="font-medium">{call.clientName}</div>
-                          <div className="text-sm text-gray-500">{call.phone}</div>
+                          <div className="text-sm text-gray-500">{call.phoneNumber}</div>
                         </div>
                         {call.status === "pending" ? 
                           <Badge variant="outline" className="text-gray-500">Pending</Badge> :
