@@ -7,7 +7,8 @@ import { useToast } from "@/components/ui/use-toast";
 
 interface ClientData {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
   phone: string;
   fileNumber: string;
 }
@@ -66,7 +67,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
       const headers = rows[0].split(',').map(header => header.trim());
       
       // Validate headers
-      const requiredHeaders = ['name', 'phone', 'fileNumber'];
+      const requiredHeaders = ['firstName', 'lastName', 'phone', 'fileNumber'];
       const hasRequiredHeaders = requiredHeaders.every(header => 
         headers.some(h => h.toLowerCase() === header.toLowerCase())
       );
@@ -82,15 +83,16 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileUploaded }) => {
           const values = row.split(',').map(value => value.trim());
           return {
             id: index + 1,
-            name: values[0] || '',
-            phone: values[1] || '',
-            fileNumber: values[2] || ''
+            firstName: values[0] || '',
+            lastName: values[1] || '',
+            phone: values[2] || '',
+            fileNumber: values[3] || ''
           };
         });
 
       // Validate data
       const validData = data.filter(item => 
-        item.name && item.phone && item.fileNumber
+        item.firstName && item.lastName && item.phone && item.fileNumber
       );
 
       if (validData.length === 0) {

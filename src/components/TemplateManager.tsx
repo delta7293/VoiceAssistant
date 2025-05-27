@@ -50,7 +50,7 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
     {
       id: "2",
       name: "Appointment Reminder",
-      content: "Hello {name}, this is a reminder about your upcoming appointment tomorrow. Your file number is {fileNumber}.",
+      content: "Hello {firstName} {lastName}, this is a reminder about your upcoming appointment tomorrow. Your file number is {fileNumber}. if you have any questions, please call us back at {phoneNumber}.",
       createdAt: new Date(2023, 7, 22)
     },
     {

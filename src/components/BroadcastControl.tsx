@@ -51,6 +51,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
   const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
+  // const [serverUrl, setServerUrl] = useState('https://536a-74-80-187-81.ngrok-free.app');
   const MAX_RETRIES = 3;
   
   const { toast } = useToast();
@@ -207,7 +208,8 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   // Helper function to personalize template
   function personalizeTemplate(template: string, client: any) {
     return template
-      .replace(/\{name\}/g, client.name)
+      .replace(/\{firstName\}/g, client.firstName)
+      .replace(/\{lastName\}/g, client.lastName)
       .replace(/\{fileNumber\}/g, client.fileNumber)
       .replace(/\{phoneNumber\}/g, client.phone);
   }
