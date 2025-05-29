@@ -214,6 +214,17 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       .replace(/\{phoneNumber\}/g, client.phone);
   }
 
+  function chunkArray(array, size) {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+      result.push(array.slice(i, i + size));
+    }
+    return result;
+  }
+
+  const batchSize = 100;
+  const clientChunks = chunkArray(clientData, batchSize);
+
   const startBroadcast = async () => {
     if (!selectedTemplate || clientData.length === 0) {
       toast({
@@ -228,81 +239,83 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       // Prepare personalized messages for each client
       const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
 
-      const response = await fetch(`${serverUrl}/api/make-call`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phonenumber: clientData.map(client => client.phone).join(','),
-          contact_id: clientData.map(client => client.id).join(','),
-          contact_name: clientData.map(client => client.name).join(','),
-          email: clientData.map(client => client.email).join(','),
-          contact_company: clientData.map(client => client.company).join(','),
-          contact_position: clientData.map(client => client.position).join(','),
-          empresa: "Your Company",
-          voiceId: "21m00Tcm4TlvDq8ikWAM",
-          stability: 90,
-          similarity_boost: 20,
-          style_exaggeration: 10,
-          // Send personalized messages as an array
-          content: personalizedMessages,
-          todo: "Your todo",
-          notodo: "Your notodo",
-          campaign_id: "your-campaign-id",
-          ai_profile_name: "your-ai-profile"
-        })
-      });
+      for (const chunk of clientChunks) {
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', errorText);
-        throw new Error(`Failed to start calls: ${response.status} ${response.statusText}`);
-      }
+        const response = await fetch(`${serverUrl}/api/make-call`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phonenumber: chunk.map(client => client.phone).join(','),
+            contact_id: chunk.map(client => client.id).join(','),
+            contact_name: chunk.map(client => client.name).join(','),
+            email: chunk.map(client => client.email).join(','),
+            contact_company: chunk.map(client => client.company).join(','),
+            contact_position: chunk.map(client => client.position).join(','),
+            empresa: "",
+            voiceId: "21m00Tcm4TlvDq8ikWAM",
+            stability: 90,
+            similarity_boost: 20,
+            style_exaggeration: 10,
+            // Send personalized messages as an array
+            content: chunk.map(client => personalizeTemplate(selectedTemplate.content, client)),
+            todo: "",
+            notodo: "",
+            campaign_id: "",
+            ai_profile_name: ""
+          })
+        });
 
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && contentType.includes('application/json')) {
-        try {
-          data = await response.json();
-          
-          console.log('API Response_data:', data);
-          if (data.success && data.data && data.data.callSids) {
-            console.log('Call SIDs:', data.data.callSids);
-            setCallSids(data.data.callSids);
-            console.log('Call SIDs set:', callSids);
-            // Start polling for status updates
-            startPolling();
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API Error:', errorText);
+          throw new Error(`Failed to start calls: ${response.status} ${response.statusText}`);
+        }
 
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            data = await response.json();
+            
+            console.log('API Response_data:', data);
+            if (data.success && data.data && data.data.callSids) {
+              console.log('Call SIDs:', data.data.callSids);
+              setCallSids(data.data.callSids);
+              console.log('Call SIDs set:', callSids);
+              // Start polling for status updates
+              startPolling();
+
+            }
+          } catch (error) {
+            console.error('Failed to parse JSON response:', error);
+            const textResponse = await response.text();
+            console.log('Raw response:', textResponse);
+            data = { message: textResponse };
+            console.log('API Response:', data);
           }
-        } catch (error) {
-          console.error('Failed to parse JSON response:', error);
+        } else {
           const textResponse = await response.text();
           console.log('Raw response:', textResponse);
           data = { message: textResponse };
           console.log('API Response:', data);
         }
-      } else {
-        const textResponse = await response.text();
-        console.log('Raw response:', textResponse);
-        data = { message: textResponse };
-        console.log('API Response:', data);
+        
+        setIsBroadcasting(true);
+        
+        // Initialize call statuses
+        const initialStatuses = chunk.map((client, idx) => ({
+          id: client.id,
+          clientName: client.name,
+          phone: client.phone,
+          callSid: data.data.callSids[idx],
+          status: "pending" as const
+        }));
+        
+        setCallStatuses(initialStatuses);
+        
+
       }
-      
-      setIsBroadcasting(true);
-      
-      // Initialize call statuses
-      const initialStatuses = clientData.map((client, idx) => ({
-        id: client.id,
-        clientName: client.name,
-        phone: client.phone,
-        callSid: callSids[idx],
-        status: "pending" as const
-      }));
-      
-      setCallStatuses(initialStatuses);
-      
 
     } catch (error) {
       console.error(error);
