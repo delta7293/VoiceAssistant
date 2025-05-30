@@ -222,7 +222,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     return result;
   }
 
-  const batchSize = 100;
+  const batchSize = 10;
   const clientChunks = chunkArray(clientData, batchSize);
 
   const startBroadcast = async () => {
