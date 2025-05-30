@@ -281,7 +281,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             console.log('API Response_data:', data);
             if (data.success && data.data && data.data.callSids) {
               console.log('Call SIDs:', data.data.callSids);
-              setCallSids(data.data.callSids);
+              setCallSids(prev => [...prev, ...data.data.callSids]);
               console.log('Call SIDs set:', callSids);
               // Start polling for status updates
               startPolling();
