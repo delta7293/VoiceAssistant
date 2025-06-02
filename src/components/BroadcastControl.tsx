@@ -50,8 +50,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callSids, setCallSids] = useState<string[]>([]);
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
-  const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
-  // const [serverUrl, setServerUrl] = useState('https://536a-74-80-187-81.ngrok-free.app');
+  // const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-8000.proxy.runpod.net');
+  // const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
+  const [serverUrl, setServerUrl] = useState('https://debd-74-80-151-196.ngrok-free.app');
   const MAX_RETRIES = 3;
   
   const { toast } = useToast();
@@ -60,7 +61,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 
 
   useEffect(() => {
-    callSidsRef.current = callSids;
+    callSidsRef.current = callSids;0
   }, [callSids]);
 
   // Function to check if response is an ngrok error page
@@ -91,7 +92,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const pollCallStatus = async () => {
 
     const currentCallSids = callSidsRef.current;
-    console.log('Polling call status for SIDs:', currentCallSids);
+    // console.log('Polling call status for SIDs:', currentCallSids);
     console.log('Current Call SIDs length:', currentCallSids.length);
     if (!currentCallSids.length) { 
       console.log('No more calls to poll');
@@ -222,7 +223,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     return result;
   }
 
-  const batchSize = 10;
+  const batchSize = 20;
   const clientChunks = chunkArray(clientData, batchSize);
 
   const startBroadcast = async () => {
@@ -312,7 +313,12 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
           status: "pending" as const
         }));
         
-        setCallStatuses(initialStatuses);
+        // setCallStatuses(initialStatuses);
+        setCallStatuses(prevStatuses => {
+          const existingPhones = new Set(prevStatuses.map(cs => cs.phone));
+          const newStatuses = initialStatuses.filter(cs => !existingPhones.has(cs.phone));
+          return [...prevStatuses, ...newStatuses];
+        });
         
 
       }
