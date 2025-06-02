@@ -50,8 +50,8 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [callSids, setCallSids] = useState<string[]>([]);
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
-  // const [serverUrl, setServerUrl] = useState('https://dft9oxen20o6ge-3000.proxy.runpod.net');
-  const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
+  const [serverUrl, setServerUrl] = useState('https://dft9oxen20o6ge-3000.proxy.runpod.net');
+  // const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
   // const [serverUrl, setServerUrl] = useState('https://debd-74-80-151-196.ngrok-free.app');
   const MAX_RETRIES = 3;
   
