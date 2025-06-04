@@ -106,8 +106,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 
       const statusPromises = currentCallSids.map(async (callSid) => {
         try {  
-        // // Example usage
-        // const callSid = 'CAc0aa4d05d8c89ba81a50f7418f4f77fd';
         const data = await getCallStatus(callSid);
 
         // Update callStatuses
@@ -121,27 +119,23 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 
         // Update completed/failed counts
         if (data.data.status === "completed") {
-
           setCallSids(prev => prev.filter(sid => sid !== callSid));
+          setCompletedCalls(prev => {
+            const newCompleted = prev + 1;
+            setCurrentProgress(((newCompleted + failedCalls) / clientData.length) * 100);
+            return newCompleted;
+          });
           console.log('Call SID removed:', callSid);
         } else if (data.data.status === "failed") {
-
           setCallSids(prev => prev.filter(sid => sid !== callSid));
+          setFailedCalls(prev => {
+            const newFailed = prev + 1;
+            setCurrentProgress(((completedCalls + newFailed) / clientData.length) * 100);
+            return newFailed;
+          });
           console.log('Call SID removed:', callSid);
         } 
         
-        setCompletedCalls(prev => data.data.status === "completed" ? prev + 1 : prev);
-        setFailedCalls(prev => data.data.status === "failed" ? prev + 1 : prev);
-        // Only keep polling if not completed/failed
-        if (data.data.status !== "completed" && data.data.status !== "failed") {
-            stillActiveCallSids.push(callSid);
-        }
-
-        // Update progress
-        setCurrentProgress(
-            ((completedCalls + failedCalls + 1) / clientData.length) * 100
-        );
-
         if (data.data.status === "completed") {
           toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
         }
@@ -335,6 +329,8 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   };
 
   const pauseBroadcast = () => {
+    setCompletedCalls(0);
+    setFailedCalls(0);
     setIsBroadcasting(false);
     stopPolling();
     toast({
@@ -442,7 +438,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                 {completedCalls + failedCalls} of {clientData.length} completed
               </span>
             </div>
-            <Progress value={currentProgress} className="h-2" />
+            <Progress value={(completedCalls + failedCalls) / clientData.length * 100} className="h-2" />
           </div>
           
           <div className="mb-6">
