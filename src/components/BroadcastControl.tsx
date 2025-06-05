@@ -36,6 +36,7 @@ interface CallStatus {
     timestamp: string;
   };
   callSid?: string;
+  initTimestamp?: number;
 }
 
 const BroadcastControl: React.FC<BroadcastProps> = ({ 
@@ -90,57 +91,63 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 }
   // Add polling function
   const pollCallStatus = async () => {
-
     const currentCallSids = callSidsRef.current;
-    // console.log('Polling call status for SIDs:', currentCallSids);
     console.log('Current Call SIDs length:', currentCallSids.length);
     if (!currentCallSids.length) { 
       console.log('No more calls to poll');
       pauseBroadcast();
     }
     try {
+      const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
+      const currentTime = Date.now();
       
-      const stillActiveCallSids: string[] = [];
-      let completedCalls = 0;
-      let failedCalls = 0;
-
       const statusPromises = currentCallSids.map(async (callSid) => {
         try {  
-        const data = await getCallStatus(callSid);
+          const data = await getCallStatus(callSid);
 
-        // Update callStatuses
-        setCallStatuses(prevStatuses =>
-            prevStatuses.map(call =>
-                call.phone === data.data.phone
-                    ? { ...call, ...data.data }
-                    : call
-            )
-        );
+          // Update callStatuses with timeout check
+          setCallStatuses(prevStatuses =>
+            prevStatuses.map(call => {
+              // If call is pending and has been pending for more than 10 minutes
+              if (call.status === "pending" && 
+                  call.initTimestamp && 
+                  currentTime - call.initTimestamp > TEN_MINUTES) {
+                return {
+                  ...call,
+                  status: "failed",
+                  message: "Call timed out after 10 minutes in pending state"
+                };
+              }
+              return call.phone === data.data.phone
+                ? { ...call, ...data.data }
+                : call;
+            })
+          );
 
-        // Update completed/failed counts
-        if (data.data.status === "completed") {
-          setCallSids(prev => prev.filter(sid => sid !== callSid));
-          setCompletedCalls(prev => {
-            const newCompleted = prev + 1;
-            setCurrentProgress(((newCompleted + failedCalls) / clientData.length) * 100);
-            return newCompleted;
-          });
-          console.log('Call SID removed:', callSid);
-        } else if (data.data.status === "failed") {
-          setCallSids(prev => prev.filter(sid => sid !== callSid));
-          setFailedCalls(prev => {
-            const newFailed = prev + 1;
-            setCurrentProgress(((completedCalls + newFailed) / clientData.length) * 100);
-            return newFailed;
-          });
-          console.log('Call SID removed:', callSid);
-        } 
-        
-        if (data.data.status === "completed") {
-          toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
-        }
+          // Update completed/failed counts
+          if (data.data.status === "completed") {
+            setCallSids(prev => prev.filter(sid => sid !== callSid));
+            setCompletedCalls(prev => {
+              const newCompleted = prev + 1;
+              setCurrentProgress(((newCompleted + failedCalls) / clientData.length) * 100);
+              return newCompleted;
+            });
+            console.log('Call SID removed:', callSid);
+          } else if (data.data.status === "failed") {
+            setCallSids(prev => prev.filter(sid => sid !== callSid));
+            setFailedCalls(prev => {
+              const newFailed = prev + 1;
+              setCurrentProgress(((completedCalls + newFailed) / clientData.length) * 100);
+              return newFailed;
+            });
+            console.log('Call SID removed:', callSid);
+          } 
+          
+          if (data.data.status === "completed") {
+            toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
+          }
 
-        console.log(`Response status for ${callSid}:`, callStatuses);
+          console.log(`Response status for ${callSid}:`, callStatuses);
 
         } catch (error) {
           console.error(`Error processing callSid ${callSid}:`, error);
@@ -154,12 +161,10 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
               variant: "destructive"
             });
           }         
-
         }
       });
 
       await Promise.all(statusPromises);
-
 
     } catch (error) {
       console.error('Error in pollCallStatus:', error);
@@ -235,7 +240,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
 
       for (const chunk of clientChunks) {
-
         const response = await fetch(`${serverUrl}/api/make-call`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -251,7 +255,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             stability: 90,
             similarity_boost: 20,
             style_exaggeration: 10,
-            // Send personalized messages as an array
             content: chunk.map(client => personalizeTemplate(selectedTemplate.content, client)),
             todo: "",
             notodo: "",
@@ -278,9 +281,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
               console.log('Call SIDs:', data.data.callSids);
               setCallSids(prev => [...prev, ...data.data.callSids]);
               console.log('Call SIDs set:', callSids);
-              // Start polling for status updates
               startPolling();
-
             }
           } catch (error) {
             console.error('Failed to parse JSON response:', error);
@@ -298,23 +299,21 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         
         setIsBroadcasting(true);
         
-        // Initialize call statuses
+        // Initialize call statuses with timestamp
         const initialStatuses = chunk.map((client, idx) => ({
           id: client.id,
           clientName: client.name,
           phone: client.phone,
           callSid: data.data.callSids[idx],
-          status: "pending" as const
+          status: "pending" as const,
+          initTimestamp: Date.now() // Add initialization timestamp
         }));
         
-        // setCallStatuses(initialStatuses);
         setCallStatuses(prevStatuses => {
           const existingPhones = new Set(prevStatuses.map(cs => cs.phone));
           const newStatuses = initialStatuses.filter(cs => !existingPhones.has(cs.phone));
           return [...prevStatuses, ...newStatuses];
         });
-        
-
       }
 
     } catch (error) {
