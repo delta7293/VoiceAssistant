@@ -104,11 +104,16 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       const statusPromises = currentCallSids.map(async (callSid) => {
         try {  
           const data = await getCallStatus(callSid);
-
+          
           // Update callStatuses with timeout check
           setCallStatuses(prevStatuses =>
+          
             prevStatuses.map(call => {
               // If call is pending and has been pending for more than 10 minutes
+              console.log('call.initTimestamp', call.initTimestamp)
+              console.log('currentTime', currentTime)
+              console.log('TEN_MINUTES', TEN_MINUTES)
+              console.log('currentTime - call.initTimestamp', currentTime - call.initTimestamp)
               if (call.status === "pending" && 
                   call.initTimestamp && 
                   currentTime - call.initTimestamp > TEN_MINUTES) {

@@ -42,22 +42,10 @@ const TemplateManager: React.FC<TemplateManagerProps> = ({
   const [templates, setTemplates] = useState<Template[]>([
     {
       id: "1",
-      name: "Welcome Message",
-      content: "Hello {name}, this is a reminder about your upcoming appointment regarding file {fileNumber}. Please confirm your availability.",
+      name: "Default Message",
+      content: "Hello {firstName} {lastName}, this is a final procedural reminder regarding file number {fileNumber}. Action is required without delay. Contact 531-215-7299 immediately — that’s 531-215-7299. Reference file number {fileNumber}, again — file number {fileNumber}.",
       createdAt: new Date(2023, 6, 15),
       isDefault: true
-    },
-    {
-      id: "2",
-      name: "Appointment Reminder",
-      content: "Hello {firstName} {lastName}, this is a reminder about your upcoming appointment tomorrow. Your file number is {fileNumber}. if you have any questions, please call us back at {phoneNumber}.",
-      createdAt: new Date(2023, 7, 22)
-    },
-    {
-      id: "3",
-      name: "Follow Up",
-      content: "Hello {name}, we're following up on your recent case with file number {fileNumber}. Please call us back at your convenience.",
-      createdAt: new Date(2023, 8, 5)
     }
   ]);
   
