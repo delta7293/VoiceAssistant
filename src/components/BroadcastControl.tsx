@@ -20,7 +20,7 @@ interface CallStatus {
   id: number;
   clientName: string;
   phone: string;
-  status: "pending" | "in-progress" | "completed" | "failed";
+  status: "pending" | "in-progress" | "completed" | "failed" | "voicemail" | "no-answer" | "busy" | "canceled" | "queued" | "initiated" | "ringing" | "answered";
   message?: string;
   template?: string;
   timestamp?: string;
@@ -36,7 +36,7 @@ interface CallStatus {
     timestamp: string;
   };
   callSid?: string;
-  initTimestamp?: number;
+  pendingStartTime?: number;
 }
 
 const BroadcastControl: React.FC<BroadcastProps> = ({ 
@@ -49,17 +49,18 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   const [completedCalls, setCompletedCalls] = useState(0);
   const [failedCalls, setFailedCalls] = useState(0);
   const [callSids, setCallSids] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [duration, setDuration] = useState<string>("00:00:00");
   const callSidsRef = useRef(callSids);
   const [retryCount, setRetryCount] = useState(0);
   const [serverUrl, setServerUrl] = useState('https://dft9oxen20o6ge-3000.proxy.runpod.net');
-  // const [serverUrl, setServerUrl] = useState('https://3mia54rzc80dk4-3000.proxy.runpod.net');
+  // const [serverUrl, setServerUrl] = useState('https://5b79-45-205-167-251.ngrok-free.app');
   // const [serverUrl, setServerUrl] = useState('https://debd-74-80-151-196.ngrok-free.app');
   const MAX_RETRIES = 3;
   
   const { toast } = useToast();
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
 
   useEffect(() => {
     callSidsRef.current = callSids;0
@@ -71,7 +72,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   async function getCallStatus(callSid) {
     try {
         const response = await fetch(`${serverUrl}/api/call-status/${callSid}`, {
-            method: 'GET',
+            method: 'POST',
             headers: {
                 'Accept': 'application/json'
             }
@@ -92,67 +93,67 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   // Add polling function
   const pollCallStatus = async () => {
     const currentCallSids = callSidsRef.current;
-    console.log('Current Call SIDs length:', currentCallSids.length);
+    // Only log if there are active calls
+    if (currentCallSids.length > 0) {
+      console.log('Active calls:', currentCallSids.length);
+    }
     if (!currentCallSids.length) { 
       console.log('No more calls to poll');
       pauseBroadcast();
     }
     try {
-      const TEN_MINUTES = 10 * 60 * 1000; // 10 minutes in milliseconds
+      const TEN_MINUTES = 10 * 60 * 1000;
       const currentTime = Date.now();
       
       const statusPromises = currentCallSids.map(async (callSid) => {
         try {  
           const data = await getCallStatus(callSid);
-          
-          // Update callStatuses with timeout check
+
+          // Update callStatuses with timestamp for pending calls
           setCallStatuses(prevStatuses =>
-          
             prevStatuses.map(call => {
-              // If call is pending and has been pending for more than 10 minutes
-              console.log('call.initTimestamp', call.initTimestamp)
-              console.log('currentTime', currentTime)
-              console.log('TEN_MINUTES', TEN_MINUTES)
-              console.log('currentTime - call.initTimestamp', currentTime - call.initTimestamp)
-              if (call.status === "pending" && 
-                  call.initTimestamp && 
-                  currentTime - call.initTimestamp > TEN_MINUTES) {
-                return {
-                  ...call,
-                  status: "failed",
-                  message: "Call timed out after 10 minutes in pending state"
-                };
+              // Remove unnecessary call logging
+              if (call.callSid === callSid) {
+                // If the call is pending and doesn't have a pendingStartTime, set it
+                if (data.data.status === "pending" && !call.pendingStartTime) {
+                  return { ...call, ...data.data, pendingStartTime: currentTime };
+                }
+                // If the call is no longer pending, remove the pendingStartTime
+                if (data.data.status !== "pending") {
+                  const { pendingStartTime, ...rest } = call;
+                  return { ...rest, ...data.data };
+                }
+                return { ...call, ...data.data };
               }
-              return call.phone === data.data.phone
-                ? { ...call, ...data.data }
-                : call;
+              return call;
             })
           );
 
-          // Update completed/failed counts
-          if (data.data.status === "completed") {
+          if (data.data.status === "completed" || data.data.status === "voicemail" || data.data.status === "answered" || data.data.status === "in-progress") {
             setCallSids(prev => prev.filter(sid => sid !== callSid));
             setCompletedCalls(prev => {
               const newCompleted = prev + 1;
               setCurrentProgress(((newCompleted + failedCalls) / clientData.length) * 100);
               return newCompleted;
             });
-            console.log('Call SID removed:', callSid);
-          } else if (data.data.status === "failed") {
+            // Log only status changes
+            console.log(`Call ${callSid} completed: ${data.data.status}`);
+            toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
+          } else if (data.data.status === "failed" || data.data.status === "no-answer" || data.data.status === "busy" || data.data.status === "canceled") {
             setCallSids(prev => prev.filter(sid => sid !== callSid));
             setFailedCalls(prev => {
               const newFailed = prev + 1;
               setCurrentProgress(((completedCalls + newFailed) / clientData.length) * 100);
               return newFailed;
             });
-            console.log('Call SID removed:', callSid);
-          } 
-          
-          if (data.data.status === "completed") {
-            toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
+            // Log only status changes
+            console.log(`Call ${callSid} failed: ${data.data.status}`);
           }
 
-          console.log(`Response status for ${callSid}:`, callStatuses);
+          // Remove unnecessary status logging
+          if (data.data.status !== "pending" && data.data.status !== "in-progress") {
+            console.log(`Call ${callSid} status updated to: ${data.data.status}`);
+          }
 
         } catch (error) {
           console.error(`Error processing callSid ${callSid}:`, error);
@@ -183,23 +184,23 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 
   const startPolling = () => {
     setRetryCount(0);
-     if (pollingIntervalRef.current) {
+    if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
     const interval = setInterval(pollCallStatus, 5000);
     pollingIntervalRef.current = interval;
-    console.log('Polling started');
+    console.log('Status polling started');
   };
 
   const stopPolling = () => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
-      console.log('Polling stopped');
+      console.log('Status polling stopped');
     }
   };
 
-  // Cleanup polling on component unmount
+  // Remove unnecessary effect logging
   useEffect(() => {
     return () => {
       stopPolling();
@@ -227,8 +228,34 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     return result;
   }
 
-  const batchSize = 20;
+  const batchSize = 200;
   const clientChunks = chunkArray(clientData, batchSize);
+
+  // Add duration update effect
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    
+    if (isBroadcasting && startTime) {
+      intervalId = setInterval(() => {
+        const now = new Date();
+        const diff = now.getTime() - startTime.getTime();
+        
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        
+        setDuration(
+          `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+        );
+      }, 1000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isBroadcasting, startTime]);
 
   const startBroadcast = async () => {
     if (!selectedTemplate || clientData.length === 0) {
@@ -240,18 +267,24 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       return;
     }
 
+    setIsBroadcasting(true);
+    setCompletedCalls(0);
+    setFailedCalls(0);
+    setCallSids([]);
+    setStartTime(new Date());  // Set start time when broadcasting begins
+
     try {
       // Prepare personalized messages for each client
-      const personalizedMessages = clientData.map(client => personalizeTemplate(selectedTemplate.content, client));
 
       for (const chunk of clientChunks) {
+
         const response = await fetch(`${serverUrl}/api/make-call`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             phonenumber: chunk.map(client => client.phone).join(','),
             contact_id: chunk.map(client => client.id).join(','),
-            contact_name: chunk.map(client => client.name).join(','),
+            contact_name: chunk.map(client => client.firstName + " " + client.lastName).join(','),
             email: chunk.map(client => client.email).join(','),
             contact_company: chunk.map(client => client.company).join(','),
             contact_position: chunk.map(client => client.position).join(','),
@@ -260,6 +293,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             stability: 90,
             similarity_boost: 20,
             style_exaggeration: 10,
+            // Send personalized messages as an array
             content: chunk.map(client => personalizeTemplate(selectedTemplate.content, client)),
             todo: "",
             notodo: "",
@@ -286,7 +320,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
               console.log('Call SIDs:', data.data.callSids);
               setCallSids(prev => [...prev, ...data.data.callSids]);
               console.log('Call SIDs set:', callSids);
-              startPolling();
             }
           } catch (error) {
             console.error('Failed to parse JSON response:', error);
@@ -302,24 +335,27 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
           console.log('API Response:', data);
         }
         
-        setIsBroadcasting(true);
         
-        // Initialize call statuses with timestamp
+        // Initialize call statuses
         const initialStatuses = chunk.map((client, idx) => ({
           id: client.id,
-          clientName: client.name,
+          clientName: client.firstName + " " + client.lastName,
           phone: client.phone,
           callSid: data.data.callSids[idx],
-          status: "pending" as const,
-          initTimestamp: Date.now() // Add initialization timestamp
+          status: "pending" as const
         }));
         
+        // setCallStatuses(initialStatuses);
         setCallStatuses(prevStatuses => {
-          const existingPhones = new Set(prevStatuses.map(cs => cs.phone));
-          const newStatuses = initialStatuses.filter(cs => !existingPhones.has(cs.phone));
+          const existingCallSids = new Set(prevStatuses.map(cs => cs.callSid));
+          const newStatuses = initialStatuses.filter(cs => !existingCallSids.has(cs.callSid));
           return [...prevStatuses, ...newStatuses];
         });
+        
+
       }
+
+      startPolling();
 
     } catch (error) {
       console.error(error);
@@ -328,19 +364,56 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         description: "Failed to start calls",
         variant: "destructive"
       });
+      setIsBroadcasting(false);
+      setStartTime(null);  // Reset start time on error
     }
   
   };
 
   const pauseBroadcast = () => {
-    setCompletedCalls(0);
-    setFailedCalls(0);
     setIsBroadcasting(false);
+    setStartTime(null);  // Reset start time when paused
     stopPolling();
     toast({
       title: "Broadcast paused",
       description: "You can resume broadcasting at any time"
     });
+  };
+
+  const cancelAllCalls = async () => {
+    try {
+      const response = await fetch(`${serverUrl}/api/cancel-all-calls`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to cancel calls');
+      }
+
+      const data = await response.json();
+      toast({
+        title: "Calls Canceled",
+        description: data.message
+      });
+
+      // Reset states
+      setIsBroadcasting(false);
+      setCompletedCalls(0);
+      setFailedCalls(0);
+      setCallSids([]);
+      setCallStatuses([]);
+      stopPolling();
+    } catch (error) {
+      console.error('Error canceling calls:', error);
+      toast({
+        title: "Error",
+        description: "Failed to cancel calls",
+        variant: "destructive"
+      });
+    }
   };
   
   const getStatusIcon = (status: string) => {
@@ -348,11 +421,21 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       case "pending":
         return <Clock className="h-4 w-4 text-gray-500" />;
       case "in-progress":
+      case "ringing":
+      case "answered":
         return <Phone className="h-4 w-4 text-broadcast-blue animate-pulse" />;
       case "completed":
         return <CheckCircle2 className="h-4 w-4 text-broadcast-green" />;
       case "failed":
+      case "no-answer":
+      case "busy":
+      case "canceled":
         return <AlertTriangle className="h-4 w-4 text-broadcast-red" />;
+      case "voicemail":
+        return <CheckCircle2 className="h-4 w-4 text-broadcast-green" />;
+      case "queued":
+      case "initiated":
+        return <Clock className="h-4 w-4 text-gray-500" />;
       default:
         return null;
     }
@@ -362,14 +445,25 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     switch (status) {
       case "pending":
         return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
-      case "in-progress":
+      case "ringing":
         return <Badge className="bg-broadcast-blue">In Progress</Badge>;
+      case "answered":
+      case "in-progress":
       case "completed":
         return <Badge className="bg-broadcast-green">Completed</Badge>;
       case "failed":
+      case "no-answer":
+      case "busy":
+      case "canceled":
         return <Badge className="bg-broadcast-red">Failed</Badge>;
+      case "voicemail":
+        return <Badge className="bg-broadcast-green">Completed</Badge>;
+      case "queued":
+        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
+      case "initiated":
+        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
       default:
-        return null;
+        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
     }
   };
 
@@ -381,20 +475,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             Voice Broadcast Control
           </h2>
           
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Server URL
-            </label>
-            <input
-              type="text"
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              className="w-full p-2 border rounded-md"
-              placeholder="Enter server URL"
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-gray-50 rounded-lg p-4 border">
               <div className="flex items-center mb-2">
                 <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-3">
@@ -432,6 +513,19 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                 {failedCalls}
               </span>
               <span className="text-sm ml-2 text-gray-500">calls</span>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4 border">
+              <div className="flex items-center mb-2">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                  <Clock className="h-4 w-4 text-broadcast-blue" />
+                </div>
+                <span className="font-medium">Duration</span>
+              </div>
+              <span className="text-3xl font-bold text-broadcast-blue">
+                {duration}
+              </span>
+              <span className="text-sm ml-2 text-gray-500">elapsed</span>
             </div>
           </div>
           
@@ -486,6 +580,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
               variant="outline"
               className="gap-2"
               disabled={isBroadcasting}
+              onClick={cancelAllCalls}
             >
               <Ban className="h-4 w-4" />
               Cancel
@@ -516,6 +611,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                         <div className="font-medium">{call.clientName}</div>
                         <div className="text-sm text-gray-500">{call.phone}</div>
                       </div>
+                       {/* {call.status} */}
                       {getStatusBadge(call.status)}
                     </div>
                   ))
@@ -529,9 +625,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="completed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "completed").length > 0 ? (
+                {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "answered" || call.status === "in-progress").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "completed")
+                    .filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "answered" || call.status === "in-progress")
                     .map((call) => (
                       <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
                         <CheckCircle2 className="h-4 w-4 text-broadcast-green" />
@@ -552,9 +648,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="failed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "failed").length > 0 ? (
+                {callStatuses.filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "failed")
+                    .filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy")
                     .map((call) => (
                       <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
                         <AlertTriangle className="h-4 w-4 text-broadcast-red" />
@@ -578,9 +674,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="pending">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "pending" || call.status === "in-progress").length > 0 ? (
+                {callStatuses.filter(call => call.status === "pending" || call.status === "ringing" || call.status === "initiated").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "pending" || call.status === "in-progress")
+                    .filter(call => call.status === "pending" || call.status === "ringing" || call.status === "initiated")
                     .map((call) => (
                       <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
                         {call.status === "pending" ? 
