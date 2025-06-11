@@ -94,21 +94,13 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     const currentCallSids = callSidsRef.current;
     console.log(currentCallSids.length);
     console.log("completedCalls + failedCalls", completedCalls + failedCalls);
+    console.log("clientData.length", clientData.length);
     if (!currentCallSids.length) {
       console.log('No more calls to poll');
       // Check if all calls are completed
 
       console.log(clientData.length);
-      if (completedCalls + failedCalls >= clientData.length) {
-        console.log('All calls completed, stopping broadcast');
-        setIsBroadcasting(false);
-        setStartTime(null);
-        stopPolling();
-        toast({
-          title: "Broadcast Complete",
-          description: `Completed: ${completedCalls}, Failed: ${failedCalls}`,
-        });
-      }
+
       return;
     }
 
@@ -167,17 +159,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             });
           }
 
-          // Check completion after status update
-          if (completedCalls + failedCalls >= clientData.length) {
-            console.log("Broadcasting complete. Total completed:", completedCalls, "Total failed:", failedCalls);
-            setIsBroadcasting(false);
-            setStartTime(null);
-            stopPolling();
-            toast({
-              title: "Broadcast Complete",
-              description: `Completed: ${completedCalls}, Failed: ${failedCalls}`,
-            });
-          }
+
 
         } catch (error) {
           console.error(`Error processing callSid ${callSid}:`, error);
@@ -313,6 +295,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     if (completed + failed >= clientData.length && isBroadcasting) {
       console.log("All calls processed, stopping broadcast");
       setIsBroadcasting(false);
+
       setStartTime(null);
       stopPolling();
       toast({
