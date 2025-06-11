@@ -92,11 +92,24 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   // Add polling function
   const pollCallStatus = async () => {
     const currentCallSids = callSidsRef.current;
-    
+    console.log(currentCallSids.length);
+    console.log("completedCalls + failedCalls", completedCalls + failedCalls);
     if (!currentCallSids.length) {
       console.log('No more calls to poll');
-      pauseBroadcast();
-      return;  // Don't pause broadcast here
+      // Check if all calls are completed
+
+      console.log(clientData.length);
+      if (completedCalls + failedCalls >= clientData.length) {
+        console.log('All calls completed, stopping broadcast');
+        setIsBroadcasting(false);
+        setStartTime(null);
+        stopPolling();
+        toast({
+          title: "Broadcast Complete",
+          description: `Completed: ${completedCalls}, Failed: ${failedCalls}`,
+        });
+      }
+      return;
     }
 
     try {
@@ -123,13 +136,47 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
           );
 
           if (data.data.status === "completed" || data.data.status === "voicemail" || data.data.status === "in-progress" || data.data.status === "answered") {
-            setCallSids(prev => prev.filter(sid => sid !== callSid));
-            setCompletedCalls(prev => prev + 1);
-            setCurrentProgress(prev => ((completedCalls + failedCalls + 1) / clientData.length) * 100);
+            console.log("Call completed:", callSid);
+            setCallSids(prev => {
+              console.log("Removing completed call from callSids:", callSid);
+              return prev.filter(sid => sid !== callSid);
+            });
+            setCompletedCalls(prev => {
+              console.log("Updating completed calls from", prev, "to", prev + 1);
+              return prev + 1;
+            });
+            setCurrentProgress(prev => {
+              const newProgress = ((completedCalls + failedCalls + 1) / clientData.length) * 100;
+              console.log("New progress:", newProgress);
+              return newProgress;
+            });
           } else if (data.data.status === "failed" || data.data.status === "no-answer" || data.data.status === "busy" || data.data.status === "canceled") {
-            setCallSids(prev => prev.filter(sid => sid !== callSid));
-            setFailedCalls(prev => prev + 1);
-            setCurrentProgress(prev => ((completedCalls + failedCalls + 1) / clientData.length) * 100);
+            console.log("Call failed:", callSid);
+            setCallSids(prev => {
+              console.log("Removing failed call from callSids:", callSid);
+              return prev.filter(sid => sid !== callSid);
+            });
+            setFailedCalls(prev => {
+              console.log("Updating failed calls from", prev, "to", prev + 1);
+              return prev + 1;
+            });
+            setCurrentProgress(prev => {
+              const newProgress = ((completedCalls + failedCalls + 1) / clientData.length) * 100;
+              console.log("New progress:", newProgress);
+              return newProgress;
+            });
+          }
+
+          // Check completion after status update
+          if (completedCalls + failedCalls >= clientData.length) {
+            console.log("Broadcasting complete. Total completed:", completedCalls, "Total failed:", failedCalls);
+            setIsBroadcasting(false);
+            setStartTime(null);
+            stopPolling();
+            toast({
+              title: "Broadcast Complete",
+              description: `Completed: ${completedCalls}, Failed: ${failedCalls}`,
+            });
           }
 
         } catch (error) {
@@ -241,6 +288,40 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     resetCounters();
   }, [callStatuses]);
 
+  useEffect(() => {
+    // Update counts based on callStatuses
+    const completed = callStatuses.filter(
+      call => call.status === "completed" || 
+              call.status === "voicemail" || 
+              call.status === "in-progress" || 
+              call.status === "answered"
+    ).length;
+    
+    const failed = callStatuses.filter(
+      call => call.status === "failed" || 
+              call.status === "no-answer" || 
+              call.status === "busy" || 
+              call.status === "canceled"
+    ).length;
+
+    console.log("Updating counts from callStatuses - Completed:", completed, "Failed:", failed);
+    
+    setCompletedCalls(completed);
+    setFailedCalls(failed);
+    
+    // Check if broadcast is complete
+    if (completed + failed >= clientData.length && isBroadcasting) {
+      console.log("All calls processed, stopping broadcast");
+      setIsBroadcasting(false);
+      setStartTime(null);
+      stopPolling();
+      toast({
+        title: "Broadcast Complete",
+        description: `Completed: ${completed}, Failed: ${failed}`,
+      });
+    }
+  }, [callStatuses]);
+
   const startBroadcast = async () => {
     if (!selectedTemplate || clientData.length === 0) {
       toast({
@@ -251,12 +332,16 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       return;
     }
 
+    // Reset all states at the start of new broadcast
     setIsBroadcasting(true);
     setCompletedCalls(0);
     setFailedCalls(0);
     setCallSids([]);
-    setCallStatuses([]); // Reset call statuses at start
+    setCallStatuses([]); // Reset call statuses
+    setCurrentProgress(0);
     setStartTime(new Date());
+    
+    console.log("Starting new broadcast - Reset counters to 0");
 
     try {
       // Process all clients in batches
