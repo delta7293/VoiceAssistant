@@ -83,7 +83,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         }
 
         const data = await response.json();
-        console.log('Call Status:', JSON.stringify(data, null, 2));
         return data;
     } catch (error) {
         console.error('Error fetching call status:', error);
@@ -93,32 +92,26 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
   // Add polling function
   const pollCallStatus = async () => {
     const currentCallSids = callSidsRef.current;
-    // Only log if there are active calls
-    if (currentCallSids.length > 0) {
-      console.log('Active calls:', currentCallSids.length);
-    }
-    if (!currentCallSids.length) { 
+    
+    if (!currentCallSids.length) {
       console.log('No more calls to poll');
       pauseBroadcast();
+      return;  // Don't pause broadcast here
     }
+
     try {
-      const TEN_MINUTES = 10 * 60 * 1000;
       const currentTime = Date.now();
       
       const statusPromises = currentCallSids.map(async (callSid) => {
         try {  
           const data = await getCallStatus(callSid);
 
-          // Update callStatuses with timestamp for pending calls
           setCallStatuses(prevStatuses =>
             prevStatuses.map(call => {
-              // Remove unnecessary call logging
               if (call.callSid === callSid) {
-                // If the call is pending and doesn't have a pendingStartTime, set it
                 if (data.data.status === "pending" && !call.pendingStartTime) {
                   return { ...call, ...data.data, pendingStartTime: currentTime };
                 }
-                // If the call is no longer pending, remove the pendingStartTime
                 if (data.data.status !== "pending") {
                   const { pendingStartTime, ...rest } = call;
                   return { ...rest, ...data.data };
@@ -129,44 +122,18 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             })
           );
 
-          if (data.data.status === "completed" || data.data.status === "voicemail" || data.data.status === "answered" || data.data.status === "in-progress") {
+          if (data.data.status === "completed" || data.data.status === "voicemail" || data.data.status === "in-progress" || data.data.status === "answered") {
             setCallSids(prev => prev.filter(sid => sid !== callSid));
-            setCompletedCalls(prev => {
-              const newCompleted = prev + 1;
-              setCurrentProgress(((newCompleted + failedCalls) / clientData.length) * 100);
-              return newCompleted;
-            });
-            // Log only status changes
-            console.log(`Call ${callSid} completed: ${data.data.status}`);
-            toast({ title: "Call Completed", description: `Call to ${data.data.clientName} completed.` });
+            setCompletedCalls(prev => prev + 1);
+            setCurrentProgress(prev => ((completedCalls + failedCalls + 1) / clientData.length) * 100);
           } else if (data.data.status === "failed" || data.data.status === "no-answer" || data.data.status === "busy" || data.data.status === "canceled") {
             setCallSids(prev => prev.filter(sid => sid !== callSid));
-            setFailedCalls(prev => {
-              const newFailed = prev + 1;
-              setCurrentProgress(((completedCalls + newFailed) / clientData.length) * 100);
-              return newFailed;
-            });
-            // Log only status changes
-            console.log(`Call ${callSid} failed: ${data.data.status}`);
-          }
-
-          // Remove unnecessary status logging
-          if (data.data.status !== "pending" && data.data.status !== "in-progress") {
-            console.log(`Call ${callSid} status updated to: ${data.data.status}`);
+            setFailedCalls(prev => prev + 1);
+            setCurrentProgress(prev => ((completedCalls + failedCalls + 1) / clientData.length) * 100);
           }
 
         } catch (error) {
           console.error(`Error processing callSid ${callSid}:`, error);
-          
-          // If it's an ngrok error and we haven't exceeded retries
-          if (error.message.includes('Ngrok connection error') && retryCount < MAX_RETRIES) {
-            setRetryCount(prev => prev + 1);
-            toast({
-              title: "Connection Error",
-              description: `Retrying connection (${retryCount + 1}/${MAX_RETRIES})...`,
-              variant: "destructive"
-            });
-          }         
         }
       });
 
@@ -174,11 +141,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
 
     } catch (error) {
       console.error('Error in pollCallStatus:', error);
-      toast({
-        title: "Error",
-        description: "Failed to poll call statuses",
-        variant: "destructive"
-      });
     }
   };
 
@@ -187,7 +149,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
     }
-    const interval = setInterval(pollCallStatus, 5000);
+    const interval = setInterval(pollCallStatus, 10000);
     pollingIntervalRef.current = interval;
     console.log('Status polling started');
   };
@@ -207,9 +169,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     };
   }, []);
 
-  useEffect(() => {
-    console.log('Call SIDs updated:', callSids);
-  }, [callSids]);
 
   // Helper function to personalize template
   function personalizeTemplate(template: string, client: any) {
@@ -257,6 +216,31 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     };
   }, [isBroadcasting, startTime]);
 
+  const resetCounters = () => {
+    const completedStatusCount = callStatuses.filter(
+      call => call.status === "completed" || 
+      call.status === "voicemail" || 
+      call.status === "in-progress" || 
+      call.status === "answered"
+    ).length;
+    
+    const failedStatusCount = callStatuses.filter(
+      call => call.status === "failed" || 
+      call.status === "no-answer" || 
+      call.status === "busy" || 
+      call.status === "canceled"
+    ).length;
+
+    setCompletedCalls(completedStatusCount);
+    setFailedCalls(failedStatusCount);
+    setCurrentProgress(((completedStatusCount + failedStatusCount) / clientData.length) * 100);
+  };
+
+  // Add effect to sync counters when callStatuses changes
+  useEffect(() => {
+    resetCounters();
+  }, [callStatuses]);
+
   const startBroadcast = async () => {
     if (!selectedTemplate || clientData.length === 0) {
       toast({
@@ -271,13 +255,15 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     setCompletedCalls(0);
     setFailedCalls(0);
     setCallSids([]);
-    setStartTime(new Date());  // Set start time when broadcasting begins
+    setCallStatuses([]); // Reset call statuses at start
+    setStartTime(new Date());
 
     try {
-      // Prepare personalized messages for each client
+      // Process all clients in batches
+      const clientChunks = chunkArray(clientData, batchSize);
+      let isFirstBatch = true;
 
       for (const chunk of clientChunks) {
-
         const response = await fetch(`${serverUrl}/api/make-call`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -293,7 +279,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             stability: 90,
             similarity_boost: 20,
             style_exaggeration: 10,
-            // Send personalized messages as an array
             content: chunk.map(client => personalizeTemplate(selectedTemplate.content, client)),
             todo: "",
             notodo: "",
@@ -315,47 +300,36 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
           try {
             data = await response.json();
             
-            console.log('API Response_data:', data);
             if (data.success && data.data && data.data.callSids) {
-              console.log('Call SIDs:', data.data.callSids);
               setCallSids(prev => [...prev, ...data.data.callSids]);
-              console.log('Call SIDs set:', callSids);
+              
+              // Initialize call statuses
+              const initialStatuses = chunk.map((client, idx) => ({
+                id: client.id,
+                clientName: client.firstName + " " + client.lastName,
+                phone: client.phone,
+                callSid: data.data.callSids[idx],
+                status: "pending" as const
+              }));
+              
+              setCallStatuses(prevStatuses => {
+                const existingCallSids = new Set(prevStatuses.map(cs => cs.callSid));
+                const newStatuses = initialStatuses.filter(cs => !existingCallSids.has(cs.callSid));
+                return [...prevStatuses, ...newStatuses];
+              });
+
+              // Start polling only for the first batch
+              if (isFirstBatch) {
+                startPolling();
+                isFirstBatch = false;
+              }
             }
           } catch (error) {
             console.error('Failed to parse JSON response:', error);
-            const textResponse = await response.text();
-            console.log('Raw response:', textResponse);
-            data = { message: textResponse };
-            console.log('API Response:', data);
+            throw error;
           }
-        } else {
-          const textResponse = await response.text();
-          console.log('Raw response:', textResponse);
-          data = { message: textResponse };
-          console.log('API Response:', data);
         }
-        
-        
-        // Initialize call statuses
-        const initialStatuses = chunk.map((client, idx) => ({
-          id: client.id,
-          clientName: client.firstName + " " + client.lastName,
-          phone: client.phone,
-          callSid: data.data.callSids[idx],
-          status: "pending" as const
-        }));
-        
-        // setCallStatuses(initialStatuses);
-        setCallStatuses(prevStatuses => {
-          const existingCallSids = new Set(prevStatuses.map(cs => cs.callSid));
-          const newStatuses = initialStatuses.filter(cs => !existingCallSids.has(cs.callSid));
-          return [...prevStatuses, ...newStatuses];
-        });
-        
-
       }
-
-      startPolling();
 
     } catch (error) {
       console.error(error);
@@ -365,15 +339,16 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         variant: "destructive"
       });
       setIsBroadcasting(false);
-      setStartTime(null);  // Reset start time on error
+      setStartTime(null);
+      stopPolling();
     }
-  
   };
 
   const pauseBroadcast = () => {
     setIsBroadcasting(false);
-    setStartTime(null);  // Reset start time when paused
+    setStartTime(null);
     stopPolling();
+    resetCounters(); // Sync counters when pausing
     toast({
       title: "Broadcast paused",
       description: "You can resume broadcasting at any time"
@@ -496,10 +471,17 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                 </div>
                 <span className="font-medium">Completed</span>
               </div>
-              <span className="text-3xl font-bold text-broadcast-green">
-                {completedCalls}
-              </span>
-              <span className="text-sm ml-2 text-gray-500">calls</span>
+              <div className="flex items-baseline">
+                <span className="text-3xl font-bold text-broadcast-green">
+                  {completedCalls}
+                </span>
+                <span className="text-sm ml-2 text-gray-500">calls</span>
+                {completedCalls !== callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length && (
+                  <span className="text-xs ml-2 text-broadcast-red">
+                    (Displayed: {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length})
+                  </span>
+                )}
+              </div>
             </div>
             
             <div className="bg-gray-50 rounded-lg p-4 border">
@@ -605,13 +587,12 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
                 {callStatuses.length > 0 ? (
                   callStatuses.map((call) => (
-                    <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
+                    <div key={`${call.id}-${call.callSid}`} className="flex items-center p-3 hover:bg-gray-50">
                       {getStatusIcon(call.status)}
                       <div className="ml-3 flex-1">
                         <div className="font-medium">{call.clientName}</div>
                         <div className="text-sm text-gray-500">{call.phone}</div>
                       </div>
-                       {/* {call.status} */}
                       {getStatusBadge(call.status)}
                     </div>
                   ))
@@ -625,17 +606,17 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="completed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "answered" || call.status === "in-progress").length > 0 ? (
+                {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "answered" || call.status === "in-progress")
+                    .filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered")
                     .map((call) => (
-                      <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
+                      <div key={`${call.id}-${call.callSid}-completed`} className="flex items-center p-3 hover:bg-gray-50">
                         <CheckCircle2 className="h-4 w-4 text-broadcast-green" />
                         <div className="ml-3 flex-1">
                           <div className="font-medium">{call.clientName}</div>
                           <div className="text-sm text-gray-500">{call.phone}</div>
                         </div>
-                        <Badge className="bg-broadcast-green">Completed</Badge>
+                        {getStatusBadge(call.status)}
                       </div>
                     ))
                 ) : (
@@ -648,11 +629,11 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="failed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy").length > 0 ? (
+                {callStatuses.filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy" || call.status === "canceled").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy")
+                    .filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy" || call.status === "canceled")
                     .map((call) => (
-                      <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
+                      <div key={`${call.id}-${call.callSid}-failed`} className="flex items-center p-3 hover:bg-gray-50">
                         <AlertTriangle className="h-4 w-4 text-broadcast-red" />
                         <div className="ml-3 flex-1">
                           <div className="font-medium">{call.clientName}</div>
@@ -661,7 +642,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                             <div className="text-xs text-broadcast-red">{call.message}</div>
                           )}
                         </div>
-                        <Badge className="bg-broadcast-red">Failed</Badge>
+                        {getStatusBadge(call.status)}
                       </div>
                     ))
                 ) : (
@@ -678,7 +659,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                   callStatuses
                     .filter(call => call.status === "pending" || call.status === "ringing" || call.status === "initiated")
                     .map((call) => (
-                      <div key={call.id} className="flex items-center p-3 hover:bg-gray-50">
+                      <div key={`${call.id}-${call.callSid}-pending`} className="flex items-center p-3 hover:bg-gray-50">
                         {call.status === "pending" ? 
                           <Clock className="h-4 w-4 text-gray-500" /> :
                           <Phone className="h-4 w-4 text-broadcast-blue animate-pulse" />
