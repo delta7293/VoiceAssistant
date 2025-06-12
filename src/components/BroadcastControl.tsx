@@ -95,14 +95,12 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     console.log(currentCallSids.length);
     console.log("completedCalls + failedCalls", completedCalls + failedCalls);
     console.log("clientData.length", clientData.length);
-    if (!currentCallSids.length) {
-      console.log('No more calls to poll');
-      // Check if all calls are completed
-
-      console.log(clientData.length);
-
-      return;
-    }
+    // if (!currentCallSids.length) {
+    //   console.log('No more calls to poll');
+    //   // Check if all calls are completed
+    //   console.log(clientData.length);
+    //   return;
+    // }
 
     try {
       const currentTime = Date.now();
@@ -406,7 +404,6 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         description: "Failed to start calls",
         variant: "destructive"
       });
-      setIsBroadcasting(false);
       setStartTime(null);
       stopPolling();
     }
