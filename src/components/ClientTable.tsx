@@ -8,7 +8,8 @@ import { User, Search, ChevronDown, ChevronUp, X, ChevronLeft, ChevronRight } fr
 
 interface ClientData {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
   phone: string;
   fileNumber: string;
 }
@@ -22,7 +23,7 @@ const ClientTable: React.FC<ClientTableProps> = ({ data }) => {
   const [sortField, setSortField] = useState<keyof ClientData>("id");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6;
+  const itemsPerPage = 10;
 
   const handleSort = (field: keyof ClientData) => {
     if (sortField === field) {
@@ -35,7 +36,8 @@ const ClientTable: React.FC<ClientTableProps> = ({ data }) => {
 
   const filteredData = data.filter((client) => {
     return (
-      client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      client.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      client.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       client.phone.includes(searchTerm) ||
       client.fileNumber.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -95,13 +97,21 @@ const ClientTable: React.FC<ClientTableProps> = ({ data }) => {
                 </TableHead>
                 <TableHead 
                   className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => handleSort("name")}
+                  onClick={() => handleSort("firstName")}
                 >
                   <div className="flex items-center">
-                    Name
-                    {sortField === "name" ? (
+                    First Name
+                    {sortField === "firstName" ? (
                       sortDirection === "asc" ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />
                     ) : null}
+                  </div>
+                </TableHead>
+                <TableHead 
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() => handleSort("lastName")}
+                >
+                  <div className="flex items-center">
+                    Last Name
                   </div>
                 </TableHead>
                 <TableHead 
@@ -133,7 +143,8 @@ const ClientTable: React.FC<ClientTableProps> = ({ data }) => {
                 paginatedData.map((client) => (
                   <TableRow key={client.id} className="hover:bg-gray-50">
                     <TableCell className="font-medium">{client.id}</TableCell>
-                    <TableCell>{client.name}</TableCell>
+                    <TableCell>{client.firstName}</TableCell>
+                    <TableCell>{client.lastName}</TableCell>
                     <TableCell>{client.phone}</TableCell>
                     <TableCell>{client.fileNumber}</TableCell>
                   </TableRow>

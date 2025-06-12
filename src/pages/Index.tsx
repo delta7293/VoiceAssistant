@@ -6,6 +6,7 @@ import TemplateManager from "@/components/TemplateManager";
 import BroadcastControl from "@/components/BroadcastControl";
 import ClientTable from "@/components/ClientTable";
 import Dashboard from "@/components/Dashboard";
+import ScheduleBroadcasts from "@/components/ScheduleBroadcasts"
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -49,6 +50,8 @@ const Index = () => {
         );
       case "clients":
         return <ClientTable data={clientData} />;
+      case "schedule":
+        return <ScheduleBroadcasts />;
       default:
         return (
           <div className="text-center py-10 text-gray-500">
