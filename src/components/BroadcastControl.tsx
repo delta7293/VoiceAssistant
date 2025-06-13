@@ -249,8 +249,35 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     return result;
   }
 
-  const batchSize = 200;
-  const clientChunks = chunkArray(clientData, batchSize);
+  const batchSize = 50;
+  const RETRY_DELAY = 2000;
+
+  // Add delay function
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Add retry logic for API calls
+  const makeApiCall = async (url: string, options: any, retryCount = 0) => {
+    try {
+      const response = await fetch(url, options);
+      
+      if (response.status === 429) { // Too Many Requests
+        if (retryCount < MAX_RETRIES) {
+          console.log(`Rate limited, retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+          await delay(RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+          return makeApiCall(url, options, retryCount + 1);
+        }
+      }
+      
+      return response;
+    } catch (error) {
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Request failed, retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        await delay(RETRY_DELAY * (retryCount + 1));
+        return makeApiCall(url, options, retryCount + 1);
+      }
+      throw error;
+    }
+  };
 
   // Add duration update effect
   useEffect(() => {
@@ -353,7 +380,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     setCompletedCalls(0);
     setFailedCalls(0);
     setCallSids([]);
-    setCallStatuses([]); // Reset call statuses
+    setCallStatuses([]);
     setCurrentProgress(0);
     setStartTime(new Date());
     
@@ -365,7 +392,12 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       let isFirstBatch = true;
 
       for (const chunk of clientChunks) {
-        const response = await fetch(`${serverUrl}/api/make-call`, {
+        // Add delay between batches
+        if (!isFirstBatch) {
+          await delay(1000); // 1 second delay between batches
+        }
+
+        const response = await makeApiCall(`${serverUrl}/api/make-call`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
