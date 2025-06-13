@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
@@ -22,8 +22,8 @@ import { CalendarClock, Plus, Trash2, X, Upload, FileSpreadsheet } from "lucide-
 import { format } from "date-fns";
 import * as XLSX from 'xlsx';
 import TemplateManager from "./TemplateManager";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, updateDoc, doc, Timestamp } from "firebase/firestore";
+import { db } from "@/firebase/firebaseConfig"
+import { collection, addDoc, updateDoc, doc, Timestamp, getDoc, getDocs } from "firebase/firestore";
 import BroadcastScheduler from "./BroadcastScheduler";
 
 interface DataSet {
@@ -39,9 +39,13 @@ interface ScheduledBroadcast {
   date: Date;
   time: string;
   template: string;
-  status: "scheduled" | "completed" | "cancelled";
+  status: "scheduled" | "completed" | "cancelled" | "in-progress";
   clientCount: number;
   dataSetId: string;
+  callSids?: string[];
+  completedCalls?: number;
+  failedCalls?: number;
+  lastUpdated?: Date;
 }
 
 interface BroadcastScheduleItem {
@@ -69,8 +73,40 @@ const ScheduleBroadcasts: React.FC = () => {
     selectedDataSetId: null,
     selectedTemplate: null
   }]);
-  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>([]);
+  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<ScheduledBroadcast[]>(() => {
+    const saved = localStorage.getItem('scheduledBroadcasts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentTime, setCurrentTime] = useState(new Date());
   const { toast } = useToast();
+  const serverUrl = 'https://dft9oxen20o6ge-3000.proxy.runpod.net';
+
+  // Update current time every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Save scheduledBroadcasts to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('scheduledBroadcasts', JSON.stringify(scheduledBroadcasts));
+  }, [scheduledBroadcasts]);
+
+  // Load dataSets from localStorage on mount
+  useEffect(() => {
+    const savedDataSets = localStorage.getItem('dataSets');
+    if (savedDataSets) {
+      setDataSets(JSON.parse(savedDataSets));
+    }
+  }, []);
+
+  // Save dataSets to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('dataSets', JSON.stringify(dataSets));
+  }, [dataSets]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -113,24 +149,63 @@ const ScheduleBroadcasts: React.FC = () => {
   // Generate time slots for the select component
   const generateTimeSlots = () => {
     const slots = [];
-    for (let hour = 9; hour <= 17; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Generate all time slots
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 5) {
         const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         slots.push(timeString);
       }
     }
+
+    // Sort slots to put closest time to current time first
+    slots.sort((a, b) => {
+      const [aHour, aMinute] = a.split(':').map(Number);
+      const [bHour, bMinute] = b.split(':').map(Number);
+      
+      const aDiff = Math.abs((aHour - currentHour) * 60 + (aMinute - currentMinute));
+      const bDiff = Math.abs((bHour - currentHour) * 60 + (bMinute - currentMinute));
+      
+      return aDiff - bDiff;
+    });
+
     return slots;
+  };
+
+  const getClosestTimeSlot = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Round to nearest 5 minutes
+    const roundedMinute = Math.round(currentMinute / 5) * 5;
+    
+    return `${currentHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`;
   };
 
   const handleAddScheduleItem = () => {
     setScheduleItems(prev => [...prev, {
       id: Date.now().toString(),
       date: new Date(),
-      time: "09:00",
+      time: getClosestTimeSlot(),
       selectedDataSetId: null,
       selectedTemplate: null
     }]);
   };
+
+  // Update initial schedule item to use closest time
+  useEffect(() => {
+    setScheduleItems([{
+      id: Date.now().toString(),
+      date: new Date(),
+      time: getClosestTimeSlot(),
+      selectedDataSetId: null,
+      selectedTemplate: null
+    }]);
+  }, []);
 
   const handleRemoveScheduleItem = (id: string) => {
     setScheduleItems(prev => prev.filter(item => item.id !== id));
@@ -158,12 +233,13 @@ const ScheduleBroadcasts: React.FC = () => {
 
     try {
       const broadcastsRef = collection(db, 'scheduledBroadcasts');
+      const newBroadcasts: ScheduledBroadcast[] = [];
       
       // Save each schedule to Firebase
       for (const item of scheduleItems) {
         const dataSet = dataSets.find(d => d.id === item.selectedDataSetId);
         
-        await addDoc(broadcastsRef, {
+        const docRef = await addDoc(broadcastsRef, {
           date: Timestamp.fromDate(item.date!),
           time: item.time,
           template: item.selectedTemplate?.content,
@@ -172,23 +248,22 @@ const ScheduleBroadcasts: React.FC = () => {
           dataSetId: item.selectedDataSetId,
           createdAt: Timestamp.now()
         });
+
+        const newBroadcast: ScheduledBroadcast = {
+          id: docRef.id,
+          date: item.date!,
+          time: item.time,
+          template: item.selectedTemplate?.name || "Unknown",
+          status: "scheduled",
+          clientCount: dataSet?.data.length || 0,
+          dataSetId: item.selectedDataSetId!
+        };
+
+        newBroadcasts.push(newBroadcast);
       }
 
-      setScheduledBroadcasts(prev => [
-        ...prev,
-        ...scheduleItems.map(item => {
-          const dataSet = dataSets.find(d => d.id === item.selectedDataSetId);
-          return {
-            id: Date.now().toString(),
-            date: item.date!,
-            time: item.time,
-            template: item.selectedTemplate?.name || "Unknown",
-            status: "scheduled" as const,
-            clientCount: dataSet?.data.length || 0,
-            dataSetId: item.selectedDataSetId!
-          };
-        })
-      ]);
+      // Update local state with all new broadcasts
+      setScheduledBroadcasts(prev => [...prev, ...newBroadcasts]);
       
       toast({
         title: "Broadcasts Scheduled",
@@ -213,9 +288,57 @@ const ScheduleBroadcasts: React.FC = () => {
     }
   };
 
+  // Add function to load scheduled broadcasts from Firestore
+  const loadScheduledBroadcasts = async () => {
+    try {
+      const broadcastsRef = collection(db, 'scheduledBroadcasts');
+      const querySnapshot = await getDocs(broadcastsRef);
+      
+      const broadcasts = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        date: doc.data().date.toDate(),
+        time: doc.data().time,
+        template: doc.data().template,
+        status: doc.data().status,
+        clientCount: doc.data().clientCount,
+        dataSetId: doc.data().dataSetId,
+        callSids: doc.data().callSids,
+        completedCalls: doc.data().completedCalls,
+        failedCalls: doc.data().failedCalls,
+        lastUpdated: doc.data().lastUpdated?.toDate()
+      }));
+
+      setScheduledBroadcasts(broadcasts);
+    } catch (error) {
+      console.error('Error loading scheduled broadcasts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load scheduled broadcasts",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Load scheduled broadcasts on component mount
+  useEffect(() => {
+    loadScheduledBroadcasts();
+  }, []);
+
   const handleCancelSchedule = async (id: string) => {
     try {
+      // First check if the document exists
       const broadcastRef = doc(db, 'scheduledBroadcasts', id);
+      const broadcastDoc = await getDoc(broadcastRef);
+      
+      if (!broadcastDoc.exists()) {
+        toast({
+          title: "Error",
+          description: "Broadcast not found. It may have been already cancelled or deleted.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       await updateDoc(broadcastRef, {
         status: "cancelled",
         cancelledAt: Timestamp.now()
@@ -241,14 +364,93 @@ const ScheduleBroadcasts: React.FC = () => {
     }
   };
 
+  // Add function to track call statuses
+  const trackCallStatuses = async (broadcastId: string, callSids: string[]) => {
+    try {
+      const broadcastRef = doc(db, 'scheduledBroadcasts', broadcastId);
+      let completedCount = 0;
+      let failedCount = 0;
+
+      for (const callSid of callSids) {
+        try {
+          const response = await fetch(`${serverUrl}/api/call-status/${callSid}`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+
+          if (!response.ok) continue;
+
+          const data = await response.json();
+          const status = data.data.status;
+
+          if (status === "completed" || status === "voicemail" || status === "in-progress" || status === "answered") {
+            completedCount++;
+          } else if (status === "failed" || status === "no-answer" || status === "busy" || status === "canceled") {
+            failedCount++;
+          }
+        } catch (error) {
+          console.error(`Error checking status for callSid ${callSid}:`, error);
+        }
+      }
+
+      // Update broadcast status in Firestore
+      await updateDoc(broadcastRef, {
+        completedCalls: completedCount,
+        failedCalls: failedCount,
+        lastUpdated: Timestamp.now()
+      });
+
+      // Update local state
+      setScheduledBroadcasts(prev =>
+        prev.map(schedule =>
+          schedule.id === broadcastId
+            ? {
+                ...schedule,
+                completedCalls: completedCount,
+                failedCalls: failedCount,
+                lastUpdated: new Date()
+              }
+            : schedule
+        )
+      );
+    } catch (error) {
+      console.error('Error tracking call statuses:', error);
+    }
+  };
+
+  // Add effect to periodically check call statuses
+  useEffect(() => {
+    const interval = setInterval(() => {
+      scheduledBroadcasts.forEach(broadcast => {
+        if (broadcast.status === "in-progress" && broadcast.callSids) {
+          trackCallStatuses(broadcast.id, broadcast.callSids);
+        }
+      });
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [scheduledBroadcasts]);
+
   return (
     <>
       <BroadcastScheduler />
       <Card className="dashboard-card">
         <div className="p-6">
-          <h2 className="text-2xl font-bold mb-6 gradient-text">
-            Schedule Multiple Broadcasts
-          </h2>
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold gradient-text">
+              Schedule Multiple Broadcasts
+            </h2>
+            <div className="text-lg font-medium text-gray-600">
+              Current Time: {currentTime.toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit',
+                second: '2-digit'
+              })}
+            </div>
+          </div>
 
           {/* Dataset Upload Section */}
           <div className="mb-8">
@@ -323,23 +525,36 @@ const ScheduleBroadcasts: React.FC = () => {
                         selected={item.date}
                         onSelect={(date) => handleUpdateScheduleItem(item.id, { date })}
                         className="rounded-md border"
-                        disabled={(date) => date < new Date()}
+                        disabled={(date) => {
+                          const now = new Date();
+                          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                          return date < today;
+                        }}
                       />
-                      <Select
-                        value={item.time}
-                        onValueChange={(time) => handleUpdateScheduleItem(item.id, { time })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select time" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {generateTimeSlots().map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {time}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={item.time}
+                          onValueChange={(time) => handleUpdateScheduleItem(item.id, { time })}
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Select time" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[300px]">
+                            <div className="grid grid-cols-4 gap-1 p-2">
+                              {generateTimeSlots().map((time) => (
+                                <SelectItem 
+                                  key={time} 
+                                  value={time}
+                                  className="text-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer"
+                                >
+                                  {time}
+                                </SelectItem>
+                              ))}
+                            </div>
+                          </SelectContent>
+                        </Select>
+                        <span className="text-sm text-gray-500">(24-hour format)</span>
+                      </div>
                     </div>
                   </div>
 
@@ -432,11 +647,20 @@ const ScheduleBroadcasts: React.FC = () => {
                           {dataSets.find(d => d.id === schedule.dataSetId)?.name}
                         </TableCell>
                         <TableCell>{schedule.template}</TableCell>
-                        <TableCell>{schedule.clientCount} contacts</TableCell>
+                        <TableCell>
+                          {schedule.clientCount} contacts
+                          {schedule.status === "in-progress" && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              Completed: {schedule.completedCalls || 0}<br />
+                              Failed: {schedule.failedCalls || 0}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                             schedule.status === "scheduled" ? "bg-blue-100 text-blue-800" :
                             schedule.status === "completed" ? "bg-green-100 text-green-800" :
+                            schedule.status === "in-progress" ? "bg-yellow-100 text-yellow-800" :
                             "bg-red-100 text-red-800"
                           }`}>
                             {schedule.status.charAt(0).toUpperCase() + schedule.status.slice(1)}

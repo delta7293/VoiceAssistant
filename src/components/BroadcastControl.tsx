@@ -196,6 +196,41 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     };
   }, []);
 
+  // Load broadcast state from localStorage on mount
+  useEffect(() => {
+    const savedState = localStorage.getItem('broadcastState');
+    if (savedState) {
+      const state = JSON.parse(savedState);
+      setIsBroadcasting(state.isBroadcasting);
+      setCompletedCalls(state.completedCalls);
+      setFailedCalls(state.failedCalls);
+      setCallSids(state.callSids);
+      setCallStatuses(state.callStatuses);
+      setStartTime(state.startTime ? new Date(state.startTime) : null);
+      setCurrentProgress(state.currentProgress);
+      
+      // Resume polling if broadcast was active
+      if (state.isBroadcasting) {
+        startPolling();
+        // Immediately check current status of all calls
+        refreshAllCallStatuses(state.callSids);
+      }
+    }
+  }, []);
+
+  // Save broadcast state to localStorage when it changes
+  useEffect(() => {
+    const state = {
+      isBroadcasting,
+      completedCalls,
+      failedCalls,
+      callSids,
+      callStatuses,
+      startTime: startTime?.toISOString(),
+      currentProgress
+    };
+    localStorage.setItem('broadcastState', JSON.stringify(state));
+  }, [isBroadcasting, completedCalls, failedCalls, callSids, callStatuses, startTime, currentProgress]);
 
   // Helper function to personalize template
   function personalizeTemplate(template: string, client: any) {
@@ -413,7 +448,8 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
     setIsBroadcasting(false);
     setStartTime(null);
     stopPolling();
-    resetCounters(); // Sync counters when pausing
+    resetCounters();
+    localStorage.removeItem('broadcastState'); // Clear saved state when pausing
     toast({
       title: "Broadcast paused",
       description: "You can resume broadcasting at any time"
@@ -446,6 +482,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       setCallSids([]);
       setCallStatuses([]);
       stopPolling();
+      localStorage.removeItem('broadcastState'); // Clear saved state when canceling
     } catch (error) {
       console.error('Error canceling calls:', error);
       toast({
@@ -504,6 +541,37 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
       default:
         return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
+    }
+  };
+
+  // Add function to refresh all call statuses
+  const refreshAllCallStatuses = async (callSids: string[]) => {
+    try {
+      const statusPromises = callSids.map(async (callSid) => {
+        try {
+          const data = await getCallStatus(callSid);
+          return data.data;
+        } catch (error) {
+          console.error(`Error refreshing status for callSid ${callSid}:`, error);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(statusPromises);
+      const validResults = results.filter(result => result !== null);
+
+      setCallStatuses(prevStatuses => {
+        const updatedStatuses = [...prevStatuses];
+        validResults.forEach(result => {
+          const index = updatedStatuses.findIndex(cs => cs.callSid === result.callSid);
+          if (index !== -1) {
+            updatedStatuses[index] = { ...updatedStatuses[index], ...result };
+          }
+        });
+        return updatedStatuses;
+      });
+    } catch (error) {
+      console.error('Error refreshing call statuses:', error);
     }
   };
 
