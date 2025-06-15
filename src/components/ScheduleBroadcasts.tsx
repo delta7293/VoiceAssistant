@@ -23,7 +23,7 @@ import { format } from "date-fns";
 import * as XLSX from 'xlsx';
 import TemplateManager from "./TemplateManager";
 import { db } from "@/firebase/firebaseConfig"
-import { collection, addDoc, updateDoc, doc, Timestamp, getDoc, getDocs } from "firebase/firestore";
+import { collection, addDoc, updateDoc, doc, Timestamp, getDoc, getDocs, deleteDoc } from "firebase/firestore";
 import BroadcastScheduler from "./BroadcastScheduler";
 
 interface DataSet {
@@ -364,6 +364,36 @@ const ScheduleBroadcasts: React.FC = () => {
     }
   };
 
+  // Add function to remove all scheduled broadcasts
+  const handleRemoveAllSchedules = async () => {
+    try {
+      const broadcastsRef = collection(db, 'scheduledBroadcasts');
+      const querySnapshot = await getDocs(broadcastsRef);
+      
+      // Delete all documents
+      const deletePromises = querySnapshot.docs.map(doc => 
+        deleteDoc(doc.ref)
+      );
+
+      await Promise.all(deletePromises);
+
+      // Clear local state
+      setScheduledBroadcasts([]);
+
+      toast({
+        title: "All Schedules Removed",
+        description: "All broadcasts have been removed from the dashboard"
+      });
+    } catch (error) {
+      console.error('Error removing all broadcasts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove broadcasts. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Add function to track call statuses
   const trackCallStatuses = async (broadcastId: string, callSids: string[]) => {
     try {
@@ -442,13 +472,25 @@ const ScheduleBroadcasts: React.FC = () => {
             <h2 className="text-2xl font-bold gradient-text">
               Schedule Multiple Broadcasts
             </h2>
-            <div className="text-lg font-medium text-gray-600">
-              Current Time: {currentTime.toLocaleTimeString('en-US', { 
-                hour12: false, 
-                hour: '2-digit', 
-                minute: '2-digit',
-                second: '2-digit'
-              })}
+            <div className="flex items-center gap-4">
+              <div className="text-lg font-medium text-gray-600">
+                Current Time: {currentTime.toLocaleTimeString('en-US', { 
+                  hour12: false, 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  second: '2-digit'
+                })}
+              </div>
+              {scheduledBroadcasts.length > 0 && (
+                <Button
+                  variant="destructive"
+                  onClick={handleRemoveAllSchedules}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Remove All Schedules
+                </Button>
+              )}
             </div>
           </div>
 

@@ -3,6 +3,14 @@ import { makeCall } from '@/lib/makeCall';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, updateDoc, doc, getDocs, query, where, Timestamp } from 'firebase/firestore';
 
+interface DataSet {
+  id: string;
+  name: string;
+  data: any[];
+  fileName: string;
+  uploadDate: Date;
+}
+
 interface ScheduledBroadcast {
   id: string;
   date: Timestamp;
@@ -16,12 +24,47 @@ interface ScheduledBroadcast {
   completedCalls?: number;
   failedCalls?: number;
   lastUpdated?: Timestamp;
+  scheduleTime?: string;
 }
 
 export const BroadcastScheduler = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const serverUrl = 'https://dft9oxen20o6ge-3000.proxy.runpod.net';
 
+  // Function to get dataset from localStorage
+  const getDatasetFromLocalStorage = (datasetId: string): DataSet | null => {
+    const savedDataSets = localStorage.getItem('dataSets');
+    if (!savedDataSets) return null;
+    
+    const dataSets: DataSet[] = JSON.parse(savedDataSets);
+    return dataSets.find(ds => ds.id === datasetId) || null;
+  };
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000;
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const makeApiCall = async (url: string, options: any, retryCount = 0) => {
+    try {
+      const response = await fetch(url, options);
+      
+      if (response.status === 429) { // Too Many Requests
+        if (retryCount < MAX_RETRIES) {
+          console.log(`Rate limited, retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+          await delay(RETRY_DELAY * (retryCount + 1)); // Exponential backoff
+          return makeApiCall(url, options, retryCount + 1);
+        }
+      }
+      
+      return response;
+    } catch (error) {
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Request failed, retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount + 1}/${MAX_RETRIES})`);
+        await delay(RETRY_DELAY * (retryCount + 1));
+        return makeApiCall(url, options, retryCount + 1);
+      }
+      throw error;
+    }
+  };
   // Add function to check call statuses
   const checkCallStatuses = async (broadcastId: string, callSids: string[]) => {
     try {
@@ -100,7 +143,7 @@ export const BroadcastScheduler = () => {
     };
 
     // Check every 30 seconds
-    const interval = setInterval(checkInProgressBroadcasts, 30000);
+    const interval = setInterval(checkInProgressBroadcasts, 10000);
 
     // Initial check
     checkInProgressBroadcasts();
@@ -115,12 +158,13 @@ export const BroadcastScheduler = () => {
       const currentTime = now.toLocaleTimeString('en-US', { 
         hour12: false, 
         hour: '2-digit', 
-        minute: '2-digit' 
+        minute: '2-digit',
+        second: '2-digit'
       });
 
       console.log('Current time:', currentTime);
 
-      // Query Firestore for scheduled broadcasts with simplified query
+      // Query Firestore for scheduled broadcasts
       const broadcastsRef = collection(db, 'scheduledBroadcasts');
       const q = query(
         broadcastsRef,
@@ -135,15 +179,27 @@ export const BroadcastScheduler = () => {
           const scheduledDate = broadcast.date.toDate();
           const scheduledTime = broadcast.time;
           
+          // Create a Date object for the scheduled time
+          const scheduledDateTime = new Date(scheduledDate);
+          const [scheduledHours, scheduledMinutes] = scheduledTime.split(':').map(Number);
+          scheduledDateTime.setHours(scheduledHours, scheduledMinutes, 0);
+
+          // Create a Date object for current time
+          const currentDateTime = new Date();
+          currentDateTime.setSeconds(0, 0); // Reset seconds and milliseconds for comparison
+
           console.log('Checking broadcast:', {
             id: broadcastDoc.id,
             scheduledDate: scheduledDate.toISOString(),
             scheduledTime,
-            currentTime
+            currentTime,
+            scheduledDateTime: scheduledDateTime.toISOString(),
+            currentDateTime: currentDateTime.toISOString()
           });
 
-          // Check if the scheduled date is today or in the past and time matches
-          if (scheduledDate <= now && scheduledTime === currentTime) {
+          // Check if the scheduled time has passed
+        //   if (scheduledDateTime <= currentDateTime) 
+            {
             console.log(`Executing scheduled broadcast: ${broadcastDoc.id}`);
             
             try {
@@ -153,55 +209,135 @@ export const BroadcastScheduler = () => {
                 lastUpdated: Timestamp.now()
               });
 
-              // Get the dataset with error handling
-              try {
-                const datasetRef = doc(db, 'datasets', broadcast.dataSetId);
-                const datasetDoc = await getDocs(collection(datasetRef, 'data'));
-                const contacts = datasetDoc.docs.map(doc => doc.data());
+              // Get the dataset from localStorage
+              const dataset = getDatasetFromLocalStorage(broadcast.dataSetId);
+              
+              if (!dataset) {
+                console.error(`Dataset ${broadcast.dataSetId} not found in localStorage`);
+                throw new Error(`Dataset ${broadcast.dataSetId} not found`);
+              }
 
-                // Execute calls for each contact and collect callSids
-                const callSids: string[] = [];
-                for (const contact of contacts) {
-                  try {
-                    const response = await makeCall({
-                      phoneNumber: contact.phoneNumber,
-                      firstName: contact.firstName,
-                      lastName: contact.lastName,
-                      fileNumber: contact.fileNumber,
-                      template: broadcast.template
-                    });
-                    
-                    if (response && response.callSid) {
-                      callSids.push(response.callSid);
-                      console.log(`CallSid: ${response.callSid}`);
+              console.log('Dataset found:', dataset);
+              const contacts = dataset.data;
+              console.log('Contacts from dataset:', contacts);
+
+              // Validate contacts
+              if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+                throw new Error('No valid contacts found in dataset');
+              }
+
+              const batchSize = 50;
+              // Process contacts in chunks of 10
+              function chunkArray(array, size) {
+                const result = [];
+                for (let i = 0; i < array.length; i += size) {
+                  result.push(array.slice(i, i + size));
+                }
+                return result;
+              }
+
+              const clientChunks = chunkArray(contacts, batchSize);
+              let isFirstBatch = true;
+              let chunkIndex = 0;
+        
+              function personalizeTemplate(template: string, client: any) {
+                return template
+                  .replace(/\{firstName\}/g, client.firstName || '')
+                  .replace(/\{lastName\}/g, client.lastName || '')
+                  .replace(/\{fileNumber\}/g, client.fileNumber || '')
+                  .replace(/\{phoneNumber\}/g, client.phone || '');
+              }
+              
+              console.log("clientChunks", clientChunks);
+              const callSids: string[] = [];
+              for (const chunk of clientChunks) {
+                try {
+                  console.log("isFirstBatch", isFirstBatch);
+                  if (!isFirstBatch) {
+                    await delay(1000); // 1 second delay between batches
+                  }
+                  
+                  console.log("chunk", chunk);
+                  // Validate and format phone numbers
+                  const validChunk = chunk.filter(client => {
+                    const phone = client.phone;
+                    const isValid = phone !== undefined && phone !== null && phone !== 0;
+                    if (!isValid) {
+                      console.warn(`Invalid phone number for client:`, client);
                     }
-                  } catch (callError) {
-                    console.error(`Error making call for contact:`, callError);
-                    // Continue with next contact even if one fails
+                    return isValid;
+                  });
+
+                  if (validChunk.length === 0) {
+                    console.warn(`No valid contacts in chunk ${chunkIndex + 1}, skipping...`);
                     continue;
                   }
+
+                  console.log("Valid chunk:", validChunk);
+                  
+                  const response = await makeApiCall(`${serverUrl}/api/make-call`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      phonenumber: validChunk.map(client => client.phone).join(','),
+                      contact_id: validChunk.map(client => client.fileNumber?.toString() || '').join(','),
+                      contact_name: validChunk.map(client => 
+                        `${client.firstName || ''} ${client.lastName || ''}`.trim()
+                      ).join(','),
+                      email: validChunk.map(client => client.email || '').join(','),
+                      contact_company: validChunk.map(client => client.company || '').join(','),
+                      contact_position: validChunk.map(client => client.position || '').join(','),
+                      empresa: "",
+                      voiceId: "21m00Tcm4TlvDq8ikWAM",
+                      stability: 90,
+                      similarity_boost: 20,
+                      style_exaggeration: 10,
+                      content: validChunk.map(client => personalizeTemplate(broadcast.template, client)).join(','),
+                      todo: "",
+                      notodo: "",
+                      campaign_id: broadcast.id || "",
+                      ai_profile_name: ""
+                    })
+                  });
+
+                  if (!response.ok) {
+                    throw new Error('Failed to make calls');
+                  }
+              
+                  const data = await response.json();
+                  if (data && data.data && data.data.callSids) {
+                    callSids.push(...data.data.callSids);
+                    console.log(`Processed chunk ${chunkIndex + 1}, CallSids: ${data.data.callSids.join(', ')}`);
+                  }
+                  
+                  isFirstBatch = false;
+                  chunkIndex++;
+                } catch (chunkError) {
+                  console.error(`Error processing chunk ${chunkIndex + 1}:`, chunkError);
+                  // Continue with next chunk even if one fails
+                  continue;
                 }
-
-                // Update broadcast with callSids
-                await updateDoc(doc(broadcastsRef, broadcastDoc.id), {
-                  callSids,
-                  lastUpdated: Timestamp.now()
-                });
-
-                console.log(`Broadcast ${broadcastDoc.id} started with ${callSids.length} calls`);
-              } catch (datasetError) {
-                console.error(`Error accessing dataset:`, datasetError);
-                throw datasetError;
               }
-            } catch (updateError) {
-              console.error(`Error updating broadcast status:`, updateError);
-              throw updateError;
+
+              // Update broadcast with callSids
+              await updateDoc(doc(broadcastsRef, broadcastDoc.id), {
+                callSids,
+                lastUpdated: Timestamp.now()
+              });
+
+              console.log(`Broadcast ${broadcastDoc.id} started with ${callSids.length} calls`);
+            } catch (error) {
+              console.error(`Error processing broadcast ${broadcastDoc.id}:`, error);
+              // Update broadcast status to failed
+              await updateDoc(doc(broadcastsRef, broadcastDoc.id), {
+                status: 'failed',
+                lastUpdated: Timestamp.now()
+              });
             }
           }
         }
       } catch (queryError) {
         console.error('Error querying scheduled broadcasts:', queryError);
-        // Don't throw here, just log the error and continue
       }
     } catch (error) {
       console.error('Error in checkScheduledBroadcasts:', error);
@@ -210,7 +346,7 @@ export const BroadcastScheduler = () => {
 
   useEffect(() => {
     // Check every minute
-    timerRef.current = setInterval(checkScheduledBroadcasts, 60000);
+    timerRef.current = setInterval(checkScheduledBroadcasts, 20000);
 
     // Initial check
     checkScheduledBroadcasts();
