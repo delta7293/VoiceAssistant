@@ -23,7 +23,7 @@ import { format } from "date-fns";
 import * as XLSX from 'xlsx';
 import TemplateManager from "./TemplateManager";
 import { db } from "@/firebase/firebaseConfig"
-import { collection, addDoc, updateDoc, doc, Timestamp, getDoc, getDocs, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, updateDoc, doc, Timestamp, getDoc, getDocs, deleteDoc, query, onSnapshot } from "firebase/firestore";
 import BroadcastScheduler from "./BroadcastScheduler";
 
 interface DataSet {
@@ -288,13 +288,14 @@ const ScheduleBroadcasts: React.FC = () => {
     }
   };
 
-  // Add function to load scheduled broadcasts from Firestore
-  const loadScheduledBroadcasts = async () => {
-    try {
-      const broadcastsRef = collection(db, 'scheduledBroadcasts');
-      const querySnapshot = await getDocs(broadcastsRef);
-      
-      const broadcasts = querySnapshot.docs.map(doc => ({
+  // Load scheduled broadcasts on component mount
+  useEffect(() => {
+    const broadcastsRef = collection(db, 'scheduledBroadcasts');
+    const q = query(broadcastsRef);
+
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const broadcasts = snapshot.docs.map(doc => ({
         id: doc.id,
         date: doc.data().date.toDate(),
         time: doc.data().time,
@@ -309,19 +310,12 @@ const ScheduleBroadcasts: React.FC = () => {
       }));
 
       setScheduledBroadcasts(broadcasts);
-    } catch (error) {
-      console.error('Error loading scheduled broadcasts:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load scheduled broadcasts",
-        variant: "destructive"
-      });
-    }
-  };
+    });
 
-  // Load scheduled broadcasts on component mount
-  useEffect(() => {
-    loadScheduledBroadcasts();
+    // Cleanup listener on unmount
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const handleCancelSchedule = async (id: string) => {
