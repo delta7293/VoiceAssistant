@@ -196,10 +196,11 @@ export const BroadcastScheduler = () => {
             scheduledDateTime: scheduledDateTime.toISOString(),
             currentDateTime: currentDateTime.toISOString()
           });
-
+          console.log("scheduledDateTime", scheduledDateTime);
+          console.log("currentDateTime", currentDateTime);
           // Check if the scheduled time has passed
-        //   if (scheduledDateTime <= currentDateTime) 
-            {
+        if (scheduledDateTime <= currentDateTime) {
+            
             console.log(`Executing scheduled broadcast: ${broadcastDoc.id}`);
             
             try {

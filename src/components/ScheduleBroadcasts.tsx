@@ -46,6 +46,7 @@ interface ScheduledBroadcast {
   completedCalls?: number;
   failedCalls?: number;
   lastUpdated?: Date;
+  createdAt: Date;
 }
 
 interface BroadcastScheduleItem {
@@ -256,7 +257,8 @@ const ScheduleBroadcasts: React.FC = () => {
           template: item.selectedTemplate?.name || "Unknown",
           status: "scheduled",
           clientCount: dataSet?.data.length || 0,
-          dataSetId: item.selectedDataSetId!
+          dataSetId: item.selectedDataSetId!,
+          createdAt: new Date()
         };
 
         newBroadcasts.push(newBroadcast);
@@ -295,19 +297,37 @@ const ScheduleBroadcasts: React.FC = () => {
 
     // Set up real-time listener
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const broadcasts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        date: doc.data().date.toDate(),
-        time: doc.data().time,
-        template: doc.data().template,
-        status: doc.data().status,
-        clientCount: doc.data().clientCount,
-        dataSetId: doc.data().dataSetId,
-        callSids: doc.data().callSids,
-        completedCalls: doc.data().completedCalls,
-        failedCalls: doc.data().failedCalls,
-        lastUpdated: doc.data().lastUpdated?.toDate()
-      }));
+      // Create a Map to handle duplicates (keep the latest version)
+      const broadcastMap = new Map();
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const date = data.date instanceof Date ? data.date : data.date.toDate();
+        broadcastMap.set(doc.id, {
+          id: doc.id,
+          date: date,
+          time: data.time,
+          template: data.template,
+          status: data.status,
+          clientCount: data.clientCount,
+          dataSetId: data.dataSetId,
+          callSids: data.callSids,
+          completedCalls: data.completedCalls,
+          failedCalls: data.failedCalls,
+          lastUpdated: data.lastUpdated?.toDate(),
+          createdAt: data.createdAt?.toDate() || new Date()
+        });
+      });
+
+      // Convert Map to array and sort by date and time
+      const broadcasts = Array.from(broadcastMap.values()).sort((a, b) => {
+        const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+        const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+        if (dateA.getTime() === dateB.getTime()) {
+          return a.time.localeCompare(b.time);
+        }
+        return dateA.getTime() - dateB.getTime();
+      });
 
       setScheduledBroadcasts(broadcasts);
     });
@@ -457,6 +477,24 @@ const ScheduleBroadcasts: React.FC = () => {
     return () => clearInterval(interval);
   }, [scheduledBroadcasts]);
 
+  const handleRemoveDataset = (datasetId: string) => {
+    // Remove from state
+    setDataSets(prev => prev.filter(ds => ds.id !== datasetId));
+    
+    // Remove from localStorage
+    const savedDataSets = localStorage.getItem('dataSets');
+    if (savedDataSets) {
+      const dataSets = JSON.parse(savedDataSets);
+      const updatedDataSets = dataSets.filter((ds: DataSet) => ds.id !== datasetId);
+      localStorage.setItem('dataSets', JSON.stringify(updatedDataSets));
+    }
+
+    toast({
+      title: "Dataset Removed",
+      description: "The dataset has been removed successfully"
+    });
+  };
+
   return (
     <>
       <BroadcastScheduler />
@@ -522,9 +560,19 @@ const ScheduleBroadcasts: React.FC = () => {
                           <p className="text-xs text-gray-500">{dataset.data.length} records</p>
                         </div>
                       </div>
-                      <span className="text-xs text-gray-500">
-                        {format(dataset.uploadDate, 'PP')}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">
+                          {format(dataset.uploadDate, 'PP')}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveDataset(dataset.id)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                   {dataSets.length === 0 && (
@@ -674,47 +722,49 @@ const ScheduleBroadcasts: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {scheduledBroadcasts.length > 0 ? (
-                    scheduledBroadcasts.map((schedule) => (
-                      <TableRow key={schedule.id}>
-                        <TableCell>
-                          {format(schedule.date, 'PPP')} at {schedule.time}
-                        </TableCell>
-                        <TableCell>
-                          {dataSets.find(d => d.id === schedule.dataSetId)?.name}
-                        </TableCell>
-                        <TableCell>{schedule.template}</TableCell>
-                        <TableCell>
-                          {schedule.clientCount} contacts
-                          {schedule.status === "in-progress" && (
+                    scheduledBroadcasts.map((schedule) => {
+                      const date = schedule.date instanceof Date ? schedule.date : new Date(schedule.date);
+                      const createdAt = schedule.createdAt instanceof Date ? schedule.createdAt : new Date();
+                      return (
+                        <TableRow key={`${schedule.id}-${date.getTime()}-${schedule.time}-${createdAt.getTime()}`}>
+                          <TableCell>
+                            {format(date, 'PPP')} at {schedule.time}
+                          </TableCell>
+                          <TableCell>
+                            {dataSets.find(d => d.id === schedule.dataSetId)?.name}
+                          </TableCell>
+                          <TableCell>{schedule.template}</TableCell>
+                          <TableCell>
+                            {schedule.clientCount} contacts
                             <div className="text-xs text-gray-500 mt-1">
                               Completed: {schedule.completedCalls || 0}<br />
                               Failed: {schedule.failedCalls || 0}
                             </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            schedule.status === "scheduled" ? "bg-blue-100 text-blue-800" :
-                            schedule.status === "completed" ? "bg-green-100 text-green-800" :
-                            schedule.status === "in-progress" ? "bg-yellow-100 text-yellow-800" :
-                            "bg-red-100 text-red-800"
-                          }`}>
-                            {schedule.status.charAt(0).toUpperCase() + schedule.status.slice(1)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {schedule.status === "scheduled" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleCancelSchedule(schedule.id)}
-                            >
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          </TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              schedule.status === "scheduled" ? "bg-blue-100 text-blue-800" :
+                              schedule.status === "completed" ? "bg-green-100 text-green-800" :
+                              schedule.status === "in-progress" ? "bg-yellow-100 text-yellow-800" :
+                              "bg-red-100 text-red-800"
+                            }`}>
+                              {schedule.status.charAt(0).toUpperCase() + schedule.status.slice(1)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {schedule.status === "scheduled" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCancelSchedule(schedule.id)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-gray-500 py-4">
