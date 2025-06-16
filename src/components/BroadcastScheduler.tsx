@@ -142,8 +142,8 @@ export const BroadcastScheduler = () => {
       }
     };
 
-    // Check every 30 seconds
-    const interval = setInterval(checkInProgressBroadcasts, 60000);
+    // Check every 2 minutes
+    const interval = setInterval(checkInProgressBroadcasts, 120000);
 
     // Initial check
     checkInProgressBroadcasts();
@@ -199,7 +199,8 @@ export const BroadcastScheduler = () => {
           console.log("scheduledDateTime", scheduledDateTime);
           console.log("currentDateTime", currentDateTime);
           // Check if the scheduled time has passed
-        if (scheduledDateTime <= currentDateTime) {
+        if (scheduledDateTime <= currentDateTime) 
+          {
             
             console.log(`Executing scheduled broadcast: ${broadcastDoc.id}`);
             
@@ -328,7 +329,7 @@ export const BroadcastScheduler = () => {
 
               console.log(`Broadcast ${broadcastDoc.id} started with ${callSids.length} calls`);
               await updateDoc(doc(broadcastsRef, broadcastDoc.id), {
-                status: 'completed',
+                status: 'in-progress',
                 lastUpdated: Timestamp.now()
               });
             } catch (error) {
@@ -351,7 +352,7 @@ export const BroadcastScheduler = () => {
 
   useEffect(() => {
     // Check every minute
-    timerRef.current = setInterval(checkScheduledBroadcasts, 60000);
+    timerRef.current = setInterval(checkScheduledBroadcasts, 120000);
 
     // Initial check
     checkScheduledBroadcasts();

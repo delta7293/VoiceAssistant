@@ -717,6 +717,7 @@ const ScheduleBroadcasts: React.FC = () => {
                     <TableHead>Template</TableHead>
                     <TableHead>Contacts</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Calls</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -746,6 +747,9 @@ const ScheduleBroadcasts: React.FC = () => {
                             }`}>
                               {schedule.status.charAt(0).toUpperCase() + schedule.status.slice(1)}
                             </span>
+                          </TableCell>
+                          <TableCell>
+                            Completed: {schedule.completedCalls || 0} Failed: {schedule.failedCalls || 0}
                           </TableCell>
                           <TableCell className="text-right">
                             {schedule.status === "scheduled" && (
