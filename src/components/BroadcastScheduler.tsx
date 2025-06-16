@@ -85,7 +85,7 @@ export const BroadcastScheduler = () => {
 
           const data = await response.json();
           const status = data.data.status;
-          console.log(`Call ${callSid} status:`, status);
+        //   console.log(`Call ${callSid} status:`, status);
 
           if (status === "completed" || status === "voicemail" || status === "answered") {
             completedCount++;
@@ -143,7 +143,7 @@ export const BroadcastScheduler = () => {
     };
 
     // Check every 30 seconds
-    const interval = setInterval(checkInProgressBroadcasts, 10000);
+    const interval = setInterval(checkInProgressBroadcasts, 60000);
 
     // Initial check
     checkInProgressBroadcasts();
@@ -327,6 +327,10 @@ export const BroadcastScheduler = () => {
               });
 
               console.log(`Broadcast ${broadcastDoc.id} started with ${callSids.length} calls`);
+              await updateDoc(doc(broadcastsRef, broadcastDoc.id), {
+                status: 'completed',
+                lastUpdated: Timestamp.now()
+              });
             } catch (error) {
               console.error(`Error processing broadcast ${broadcastDoc.id}:`, error);
               // Update broadcast status to failed
@@ -347,7 +351,7 @@ export const BroadcastScheduler = () => {
 
   useEffect(() => {
     // Check every minute
-    timerRef.current = setInterval(checkScheduledBroadcasts, 20000);
+    timerRef.current = setInterval(checkScheduledBroadcasts, 60000);
 
     // Initial check
     checkScheduledBroadcasts();
