@@ -142,8 +142,8 @@ export const BroadcastScheduler = () => {
       }
     };
 
-    // Check every 2 minutes
-    const interval = setInterval(checkInProgressBroadcasts, 120000);
+    // Check every 30 seconds
+    const interval = setInterval(checkInProgressBroadcasts, 60000);
 
     // Initial check
     checkInProgressBroadcasts();
@@ -199,9 +199,29 @@ export const BroadcastScheduler = () => {
           console.log("scheduledDateTime", scheduledDateTime);
           console.log("currentDateTime", currentDateTime);
           // Check if the scheduled time has passed
-        if (scheduledDateTime <= currentDateTime) 
+          let isScheduledStarted = false;
+          let isScheduledCompleted = false;
+          if (scheduledDateTime <= currentDateTime) {
+            console.log("yes")
+            console.log(`Executing scheduled broadcast: ${broadcastDoc.id}`);
+            const dataset = getDatasetFromLocalStorage(broadcast.dataSetId);
+
+            if (!dataset) {
+              console.error(`Dataset ${broadcast.dataSetId} not found in localStorage`);
+              throw new Error(`Dataset ${broadcast.dataSetId} not found`);
+            }
+
+            console.log('Dataset found:', dataset);
+            const contacts = dataset.data;
+            isScheduledStarted = true;
+          } else {
+            isScheduledStarted = false;
+            console.log("no")
+          }
+          
+         if (isScheduledStarted) 
           {
-            
+            console.log("isScheduledStarted", isScheduledStarted);
             console.log(`Executing scheduled broadcast: ${broadcastDoc.id}`);
             
             try {
@@ -352,7 +372,7 @@ export const BroadcastScheduler = () => {
 
   useEffect(() => {
     // Check every minute
-    timerRef.current = setInterval(checkScheduledBroadcasts, 120000);
+    timerRef.current = setInterval(checkScheduledBroadcasts, 60000);
 
     // Initial check
     checkScheduledBroadcasts();
