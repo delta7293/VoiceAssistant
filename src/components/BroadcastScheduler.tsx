@@ -85,11 +85,11 @@ export const BroadcastScheduler = () => {
 
           const data = await response.json();
           const status = data.data.status;
-        //   console.log(`Call ${callSid} status:`, status);
+          console.log(`Call ${callSid} status:`, status);
 
-          if (status === "completed" || status === "voicemail" || status === "answered") {
+          if (status === "completed" || status === "voicemail" || status === "answered" || status === "busy") {
             completedCount++;
-          } else if (status === "failed" || status === "no-answer" || status === "busy" || status === "canceled") {
+          } else if (status === "failed" || status === "no-answer" || status === "canceled") {
             failedCount++;
           }
         } catch (error) {
