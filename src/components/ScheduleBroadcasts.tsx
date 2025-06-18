@@ -489,6 +489,10 @@ const ScheduleBroadcasts: React.FC = () => {
       localStorage.setItem('dataSets', JSON.stringify(updatedDataSets));
     }
 
+    localStorage.removeItem('dataSets');
+
+    // Remove from scheduledBroadcasts
+    localStorage.removeItem('scheduledBroadcasts');
     toast({
       title: "Dataset Removed",
       description: "The dataset has been removed successfully"

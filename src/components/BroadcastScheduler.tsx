@@ -113,6 +113,8 @@ export const BroadcastScheduler = () => {
           lastUpdated: Timestamp.now()
         });
         console.log(`Broadcast ${broadcastId} completed`);
+
+        removeCompletedDataSet(broadcastId);
       }
     } catch (error) {
       console.error('Error checking call statuses:', error);
@@ -389,3 +391,13 @@ export const BroadcastScheduler = () => {
 };
 
 export default BroadcastScheduler; 
+
+function removeCompletedDataSet(completedDataSetId: string) {
+  const savedDataSets = localStorage.getItem('dataSets');
+  if (!savedDataSets) return;
+
+  const dataSets = JSON.parse(savedDataSets);
+  const updatedDataSets = dataSets.filter((ds: any) => ds.id !== completedDataSetId);
+
+  localStorage.setItem('dataSets', JSON.stringify(updatedDataSets));
+} 
