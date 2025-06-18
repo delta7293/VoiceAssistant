@@ -310,13 +310,13 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       call => call.status === "completed" || 
       call.status === "voicemail" || 
       call.status === "in-progress" || 
-      call.status === "answered"
+      call.status === "answered" ||
+      call.status === "busy"
     ).length;
     
     const failedStatusCount = callStatuses.filter(
       call => call.status === "failed" || 
       call.status === "no-answer" || 
-      call.status === "busy" || 
       call.status === "canceled"
     ).length;
 
@@ -336,13 +336,13 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       call => call.status === "completed" || 
               call.status === "voicemail" || 
               call.status === "in-progress" || 
-              call.status === "answered"
+              call.status === "answered" ||
+              call.status === "busy"
     ).length;
     
     const failed = callStatuses.filter(
       call => call.status === "failed" || 
               call.status === "no-answer" || 
-              call.status === "busy" || 
               call.status === "canceled"
     ).length;
 
@@ -533,6 +533,7 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
       case "ringing":
       case "answered":
         return <Phone className="h-4 w-4 text-broadcast-blue animate-pulse" />;
+      case "busy":
       case "completed":
         return <CheckCircle2 className="h-4 w-4 text-broadcast-green" />;
       case "failed":
@@ -558,21 +559,21 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
         return <Badge className="bg-broadcast-blue">In Progress</Badge>;
       case "answered":
       case "in-progress":
+      case "busy":
       case "completed":
         return <Badge className="bg-broadcast-green">Completed</Badge>;
       case "failed":
       case "no-answer":
-      case "busy":
       case "canceled":
-        return <Badge className="bg-broadcast-red">Failed</Badge>;
+        return <Badge className="bg-broadcast-red">{status}</Badge>;
       case "voicemail":
         return <Badge className="bg-broadcast-green">Completed</Badge>;
       case "queued":
-        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
+        return <Badge variant="outline" className="text-gray-500">{status}</Badge>;
       case "initiated":
-        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
+        return <Badge variant="outline" className="text-gray-500">{status}</Badge>;
       default:
-        return <Badge variant="outline" className="text-gray-500">Pending</Badge>;
+        return <Badge variant="outline" className="text-gray-500">{status}</Badge>;
     }
   };
 
@@ -641,9 +642,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
                   {completedCalls}
                 </span>
                 <span className="text-sm ml-2 text-gray-500">calls</span>
-                {completedCalls !== callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length && (
+                {completedCalls !== callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered" || call.status === "busy").length && (
                   <span className="text-xs ml-2 text-broadcast-red">
-                    (Displayed: {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length})
+                    (Displayed: {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered" || call.status === "busy").length})
                   </span>
                 )}
               </div>
@@ -771,9 +772,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="completed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered").length > 0 ? (
+                {callStatuses.filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered" || call.status === "busy").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered")
+                    .filter(call => call.status === "completed" || call.status === "voicemail" || call.status === "in-progress" || call.status === "answered" || call.status === "busy")
                     .map((call) => (
                       <div key={`${call.id}-${call.callSid}-completed`} className="flex items-center p-3 hover:bg-gray-50">
                         <CheckCircle2 className="h-4 w-4 text-broadcast-green" />
@@ -794,9 +795,9 @@ const BroadcastControl: React.FC<BroadcastProps> = ({
             
             <TabsContent value="failed">
               <div className="border rounded-md divide-y max-h-72 overflow-y-auto">
-                {callStatuses.filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy" || call.status === "canceled").length > 0 ? (
+                {callStatuses.filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "canceled").length > 0 ? (
                   callStatuses
-                    .filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "busy" || call.status === "canceled")
+                    .filter(call => call.status === "failed" || call.status === "no-answer" || call.status === "canceled")
                     .map((call) => (
                       <div key={`${call.id}-${call.callSid}-failed`} className="flex items-center p-3 hover:bg-gray-50">
                         <AlertTriangle className="h-4 w-4 text-broadcast-red" />
