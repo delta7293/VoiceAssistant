@@ -114,7 +114,8 @@ export const BroadcastScheduler = () => {
         });
         console.log(`Broadcast ${broadcastId} completed`);
 
-        removeCompletedDataSet(broadcastId);
+        // removeCompletedDataSet(broadcastId);
+        localStorage.removeItem('scheduledBroadcasts');
       }
     } catch (error) {
       console.error('Error checking call statuses:', error);
