@@ -12,7 +12,7 @@ async function getCallStatus(callSid) {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-
+s
         const data = await response.json();
         console.log('Call Status:', JSON.stringify(data, null, 2));
         return data;
